@@ -984,12 +984,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     // Selected raw shapes (ADR 0031) show Animate's dot pattern over themselves, with no box.
     if app.tool == Tool::Select {
         let to_px = Affine::translate(origin.x, origin.y).mul(&Affine::scale(zoom, zoom));
-        let mut mesh = egui::Mesh::default();
-        let mut budget = MAX_DOTS;
-        for item in app.s.display_list().items.iter().filter(|i| app.s.selection.contains(i.layer, i.element) && raw.contains(&(i.layer, i.element))) {
-            selection_dots(&mut mesh, item, &to_px.mul(&item.transform), canvas, &mut budget);
-        }
-        painter.add(egui::Shape::mesh(mesh));
+        let dl = app.s.display_list();
+        let items = dl.items.iter().filter(|i| app.s.selection.contains(i.layer, i.element) && raw.contains(&(i.layer, i.element)));
+        painter.add(egui::Shape::mesh(selection_dots_mesh(items, &to_px, canvas)));
     }
     if multi {
         let hover = pointer.filter(|p| canvas.contains(*p) && !panning && !app.modal_open() && app.palette.is_none() && matches!(app.tool, Tool::Select | Tool::Transform)).map(to_stage);
@@ -1251,18 +1248,40 @@ fn raw_ids(app: &App) -> std::collections::HashSet<(anicraft_engine::doc::LayerI
     layers.into_iter().flat_map(|l| app.s.elements_on(l).into_iter().filter(|e| matches!(&e.kind, anicraft_engine::doc::ElementKind::Shape(sh) if sh.merge)).map(move |e| (l, e.id))).collect()
 }
 
-/// Most selection dots drawn in a frame.
+/// Fewest selection dots allowed in a frame, however small the stage.
 const MAX_DOTS: usize = 60_000;
+
+/// Screen pixels between selection dots.
+const DOT_GAP: f32 = 3.0;
+
+/// The most selection dots drawn in a frame on a stage of this size: room to cover every grid
+/// point on the screen twice (fills, plus the strokes and other layers' fills over them), so a
+/// selection that fills the view is shaded all over, not cut off part way down (#204).
+fn dot_budget(clip: Rect) -> usize {
+    let per_row = ((clip.width().max(0.0) / DOT_GAP) as usize).saturating_add(1);
+    let rows = ((clip.height().max(0.0) / DOT_GAP) as usize).saturating_add(1);
+    MAX_DOTS.max(per_row.saturating_mul(rows).saturating_mul(2))
+}
+
+/// The selection dots over `items` (selected raw shapes), drawn with `to_px` (stage to screen)
+/// and kept inside `clip`.
+fn selection_dots_mesh<'a>(items: impl Iterator<Item = &'a anicraft_engine::doc::DisplayItem>, to_px: &Affine, clip: Rect) -> egui::Mesh {
+    let mut mesh = egui::Mesh::default();
+    let mut budget = dot_budget(clip);
+    for item in items {
+        selection_dots(&mut mesh, item, &to_px.mul(&item.transform), clip, &mut budget);
+    }
+    mesh
+}
 
 /// Animate's selection look for raw shapes: fine dots over the selected fill or stroke, light and
 /// dark in a checker so they show on any colour. They sit on a fixed screen grid, so they don't
 /// crawl when the view pans; `m` maps the item's path to the screen.
 fn selection_dots(mesh: &mut egui::Mesh, item: &anicraft_engine::doc::DisplayItem, m: &Affine, clip: Rect, budget: &mut usize) {
-    const GAP: f32 = 3.0;
     let mut dot = |p: Pos2| {
         if clip.contains(p) && *budget > 0 {
             *budget -= 1;
-            let dark = ((p.x / GAP).round() as i64 + (p.y / GAP).round() as i64).rem_euclid(2) == 0;
+            let dark = ((p.x / DOT_GAP).round() as i64 + (p.y / DOT_GAP).round() as i64).rem_euclid(2) == 0;
             mesh.add_colored_rect(Rect::from_center_size(p, vec2(1.5, 1.5)), if dark { T.selection } else { Color32::WHITE });
         }
         *budget > 0
@@ -1270,7 +1289,7 @@ fn selection_dots(mesh: &mut egui::Mesh, item: &anicraft_engine::doc::DisplayIte
     let lines = item.path.flatten(m, 0.5);
     if item.fill.is_some() {
         let b = item.path.bounds().transformed(m);
-        let mut y = (b.min.y.max(clip.top()) / GAP).ceil() * GAP;
+        let mut y = (b.min.y.max(clip.top()) / DOT_GAP).ceil() * DOT_GAP;
         let bottom = b.max.y.min(clip.bottom());
         let mut xs: Vec<f32> = Vec::new();
         while y <= bottom {
@@ -1288,22 +1307,22 @@ fn selection_dots(mesh: &mut egui::Mesh, item: &anicraft_engine::doc::DisplayIte
             }
             xs.sort_by(f32::total_cmp);
             for [x0, x1] in xs.as_chunks::<2>().0 {
-                let mut x = (x0.max(clip.left()) / GAP).ceil() * GAP;
+                let mut x = (x0.max(clip.left()) / DOT_GAP).ceil() * DOT_GAP;
                 while x <= x1.min(clip.right()) {
                     if !dot(pos2(x, y)) {
                         return;
                     }
-                    x += GAP;
+                    x += DOT_GAP;
                 }
             }
-            y += GAP;
+            y += DOT_GAP;
         }
     }
     if let Some(st) = &item.stroke {
         // Along the stroke, in rows across its width; segments off the screen are skipped.
         let half = (st.reach() * m.mean_scale()).max(0.5);
-        let rows = (half / GAP).floor() as i32;
-        let near = clip.expand(half + GAP);
+        let rows = (half / DOT_GAP).floor() as i32;
+        let near = clip.expand(half + DOT_GAP);
         for pl in &lines {
             let n = pl.points.len();
             let segs = if pl.closed { n } else { n.saturating_sub(1) };
@@ -1316,7 +1335,7 @@ fn selection_dots(mesh: &mut egui::Mesh, item: &anicraft_engine::doc::DisplayIte
                     continue;
                 }
                 if !near.intersects(Rect::from_two_pos(pos2(a.x, a.y), pos2(c.x, c.y))) {
-                    carry = (carry - len).rem_euclid(GAP);
+                    carry = (carry - len).rem_euclid(DOT_GAP);
                     continue;
                 }
                 let (dir, normal) = (d * (1.0 / len), d.perp() * (1.0 / len));
@@ -1324,12 +1343,12 @@ fn selection_dots(mesh: &mut egui::Mesh, item: &anicraft_engine::doc::DisplayIte
                 while t < len {
                     let p = a + dir * t;
                     for k in -rows..=rows {
-                        let q = p + normal * (k as f32 * GAP);
+                        let q = p + normal * (k as f32 * DOT_GAP);
                         if !dot(pos2(q.x, q.y)) {
                             return;
                         }
                     }
-                    t += GAP;
+                    t += DOT_GAP;
                 }
                 carry = t - len;
             }
@@ -1612,5 +1631,74 @@ mod xf_tests {
         assert_eq!(xf_zone(r, pos2(312.0, 212.0)), Some(XfKind::Rotate));
         assert_eq!(xf_zone(r, pos2(200.0, 150.0)), Some(XfKind::Move));
         assert_eq!(xf_zone(r, pos2(500.0, 500.0)), None);
+    }
+}
+
+#[cfg(test)]
+mod selection_dots_tests {
+    use super::*;
+    use anicraft_engine::doc::{ColorTransform, DisplayItem, ElementId, LayerId, Paint, Rgba};
+    use anicraft_engine::geom::{FillRule, Path};
+    use std::sync::Arc;
+
+    fn filled(path: Path) -> DisplayItem {
+        DisplayItem {
+            path: Arc::new(path),
+            transform: Affine::IDENTITY,
+            fill: Some(Paint::Solid(Rgba::BLACK)),
+            stroke: None,
+            fill_rule: FillRule::NonZero,
+            color: ColorTransform::IDENTITY,
+            layer: LayerId(0),
+            element: ElementId(0),
+            outline: None,
+            clip: None,
+            masks: None,
+            guide: false,
+            group: None,
+            image: None,
+            smooth: true,
+        }
+    }
+
+    /// The lowest and highest screen y any dot reaches.
+    fn dot_rows(mesh: &egui::Mesh) -> (f32, f32) {
+        mesh.vertices.iter().fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), v| (lo.min(v.pos.y), hi.max(v.pos.y)))
+    }
+
+    /// #204: zoomed in on a selected raw shape larger than the view, the dots must shade the
+    /// whole visible part of it, down to the bottom of the stage, not stop part way down.
+    #[test]
+    fn a_shape_filling_the_zoomed_view_is_shaded_to_the_bottom() {
+        let canvas = Rect::from_min_max(pos2(220.0, 90.0), pos2(1820.0, 1090.0));
+        let zoom = 8.0;
+        // The view looks at stage (50, 40) and beyond; the 400 x 300 shape covers all of it.
+        let to_px = Affine::translate(canvas.left() - 50.0 * zoom, canvas.top() - 40.0 * zoom).mul(&Affine::scale(zoom, zoom));
+        let item = filled(Path::rect(0.0, 0.0, 400.0, 300.0));
+        let mesh = selection_dots_mesh(std::iter::once(&item), &to_px, canvas);
+        let (top, bottom) = dot_rows(&mesh);
+        assert!(top <= canvas.top() + 2.0 * DOT_GAP, "dots start at the top: {top}");
+        assert!(bottom >= canvas.bottom() - 2.0 * DOT_GAP, "dots stop at y = {bottom}, above the stage bottom {}", canvas.bottom());
+        let grid = (canvas.width() / DOT_GAP) as usize * (canvas.height() / DOT_GAP) as usize;
+        assert!(mesh.vertices.len() / 4 >= grid, "{} dots for {grid} grid points", mesh.vertices.len() / 4);
+    }
+
+    /// At 100%, a shape bigger than the view (the issue's other case) is shaded all over too.
+    #[test]
+    fn a_big_shape_at_full_size_is_shaded_to_the_bottom() {
+        let canvas = Rect::from_min_max(pos2(0.0, 0.0), pos2(1500.0, 900.0));
+        let item = filled(Path::rect(-100.0, -100.0, 2000.0, 1200.0));
+        let mesh = selection_dots_mesh(std::iter::once(&item), &Affine::IDENTITY, canvas);
+        let (_, bottom) = dot_rows(&mesh);
+        assert!(bottom >= canvas.bottom() - 2.0 * DOT_GAP, "dots stop at y = {bottom}, above the stage bottom {}", canvas.bottom());
+    }
+
+    /// The budget keeps its floor on a small or empty stage and never overflows on a huge one.
+    #[test]
+    fn dot_budget_scales_with_the_stage() {
+        assert_eq!(dot_budget(Rect::NOTHING), MAX_DOTS);
+        assert_eq!(dot_budget(Rect::from_min_size(Pos2::ZERO, vec2(100.0, 100.0))), MAX_DOTS);
+        assert!(dot_budget(Rect::from_min_size(Pos2::ZERO, vec2(3840.0, 2160.0))) >= 2 * 1280 * 720);
+        assert!(dot_budget(Rect::from_min_size(Pos2::ZERO, vec2(f32::MAX, f32::MAX))) >= MAX_DOTS);
     }
 }
