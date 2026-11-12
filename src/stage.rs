@@ -308,7 +308,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let pen_hot = if app.tool == Tool::Pen && alt && !panning && !preview && app.drag == Drag::None { pointer.and_then(|p| crate::motion_path::pen_hot(app, p, xf)) } else { None };
     // The open symbol's 9-slice guides take the Selection tool's press first (ADR 0055).
     let slice_hot = if app.drag == Drag::None && !panning && !preview { pointer.and_then(|p| crate::scale_grid::hit(app, p, xf)) } else { None };
-    if resp.hovered() {
+    if resp.hovered() || resp.dragged() {
         let icon = match app.tool {
             _ if panning => CursorIcon::Grab,
             _ if let Drag::SliceGuide { guide } = app.drag => guide.cursor(),
@@ -330,15 +330,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     Drag::Transform { kind, .. } | Drag::MultiTransform { kind, .. } => Some(kind),
                     _ => sel_rect.zip(pointer).and_then(|(r, p)| xf_zone(r, p)),
                 };
-                match zone {
-                    Some(XfKind::Scale { hx, hy }) if hx * hy > 0 => CursorIcon::ResizeNwSe,
-                    Some(XfKind::Scale { hx, hy }) if hx * hy < 0 => CursorIcon::ResizeNeSw,
-                    Some(XfKind::Scale { hx: 0, .. }) => CursorIcon::ResizeVertical,
-                    Some(XfKind::Scale { .. }) => CursorIcon::ResizeHorizontal,
-                    Some(XfKind::Rotate) => CursorIcon::Alias,
-                    Some(XfKind::Move) => CursorIcon::Move,
-                    None => CursorIcon::Default,
-                }
+                transform_cursor_icon(zone)
             }
             Tool::Rect | Tool::Oval | Tool::Star | Tool::Line | Tool::Pen | Tool::Pencil | Tool::Brush | Tool::PaintBrush | Tool::Eraser | Tool::PaintBucket | Tool::InkBottle | Tool::Eyedropper | Tool::Bone => CursorIcon::Crosshair,
             Tool::Text => CursorIcon::Text,
@@ -1086,6 +1078,21 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         painter.circle_stroke(c, SNAP_RING + 1.0, Stroke::new(3.0, Color32::WHITE));
         painter.circle_stroke(c, SNAP_RING, Stroke::new(2.0, T.selection));
     }
+    // The Free Transform rotate cursor (curved two-headed arrow).
+    if transforming
+        && !panning
+        && !paused
+        && !app.modal_open()
+        && let Some(p) = pointer.filter(|p| canvas.contains(*p))
+    {
+        let zone = match app.drag {
+            Drag::Transform { kind, .. } | Drag::MultiTransform { kind, .. } => Some(kind),
+            _ => sel_rect.and_then(|r| xf_zone(r, p)),
+        };
+        if zone == Some(XfKind::Rotate) {
+            draw_rotate_cursor(&painter, p);
+        }
+    }
     // What a drag from here does to raw shapes: Animate's corner and curve marks by the pointer.
     if app.tool == Tool::Select
         && app.drag == Drag::None
@@ -1415,7 +1422,7 @@ fn handles(r: Rect) -> [(Pos2, i8, i8); 8] {
 /// What dragging from screen point `p` would do to a selection drawn as `r`.
 fn xf_zone(r: Rect, p: Pos2) -> Option<XfKind> {
     for (h, hx, hy) in handles(r) {
-        if (p.x - h.x).abs() <= HANDLE && (p.y - h.y).abs() <= HANDLE {
+        if (p.x - h.x).abs() <= HANDLE * 0.5 && (p.y - h.y).abs() <= HANDLE * 0.5 {
             return Some(XfKind::Scale { hx, hy });
         }
     }
@@ -1423,6 +1430,62 @@ fn xf_zone(r: Rect, p: Pos2) -> Option<XfKind> {
         return Some(XfKind::Rotate);
     }
     r.expand(2.0).contains(p).then_some(XfKind::Move)
+}
+
+fn transform_cursor_icon(zone: Option<XfKind>) -> CursorIcon {
+    match zone {
+        Some(XfKind::Scale { hx, hy }) if hx * hy > 0 => CursorIcon::ResizeNwSe,
+        Some(XfKind::Scale { hx, hy }) if hx * hy < 0 => CursorIcon::ResizeNeSw,
+        Some(XfKind::Scale { hx: 0, .. }) => CursorIcon::ResizeVertical,
+        Some(XfKind::Scale { .. }) => CursorIcon::ResizeHorizontal,
+        Some(XfKind::Rotate) => CursorIcon::None,
+        Some(XfKind::Move) => CursorIcon::Move,
+        None => CursorIcon::Default,
+    }
+}
+
+/// A curved two-headed arrow for Free Transform rotation.
+fn draw_rotate_cursor(painter: &egui::Painter, at: Pos2) {
+    let r = 8.5;
+    let a0 = -40f32.to_radians();
+    let a1 = 130f32.to_radians();
+    let n = 16;
+    let arc: Vec<Pos2> = (0..=n)
+        .map(|i| {
+            let t = a0 + (a1 - a0) * (i as f32 / n as f32);
+            at + vec2(r * t.cos(), r * t.sin())
+        })
+        .collect();
+
+    let p0 = at + vec2(r * a0.cos(), r * a0.sin());
+    let p1 = at + vec2(r * a1.cos(), r * a1.sin());
+
+    let t0 = vec2(a0.sin(), -a0.cos());
+    let n0 = vec2(-t0.y, t0.x);
+    let t1 = vec2(-a1.sin(), a1.cos());
+    let n1 = vec2(-t1.y, t1.x);
+
+    let arrow_len = 3.5;
+    let arrow_w = 2.5;
+
+    let f0_a = p0 + t0 * arrow_len + n0 * arrow_w;
+    let f0_b = p0 + t0 * arrow_len - n0 * arrow_w;
+    let f1_a = p1 - t1 * arrow_len + n1 * arrow_w;
+    let f1_b = p1 - t1 * arrow_len - n1 * arrow_w;
+
+    let shadow = Stroke::new(3.0, Color32::BLACK);
+    painter.add(egui::Shape::line(arc.clone(), shadow));
+    painter.line_segment([p0, f0_a], shadow);
+    painter.line_segment([p0, f0_b], shadow);
+    painter.line_segment([p1, f1_a], shadow);
+    painter.line_segment([p1, f1_b], shadow);
+
+    let fg = Stroke::new(1.5, Color32::WHITE);
+    painter.add(egui::Shape::line(arc, fg));
+    painter.line_segment([p0, f0_a], fg);
+    painter.line_segment([p0, f0_b], fg);
+    painter.line_segment([p1, f1_a], fg);
+    painter.line_segment([p1, f1_b], fg);
 }
 
 /// The whole transform of a free-transform drag from `start` to `cur` (stage space).
@@ -1602,6 +1665,18 @@ mod xf_tests {
         assert!(c.distance(Vec2::new(50.0, 25.0)) < 1e-3);
         let angle = m.decompose().rotation.to_degrees();
         assert!((angle / 15.0 - (angle / 15.0).round()).abs() < 1e-3, "{angle}");
+    }
+
+    #[test]
+    fn rotate_available_outside_corner_handles() {
+        let r = Rect::from_min_max(pos2(100.0, 100.0), pos2(300.0, 200.0));
+        assert_eq!(xf_zone(r, pos2(300.0, 200.0)), Some(XfKind::Scale { hx: 1, hy: 1 }));
+        assert_eq!(transform_cursor_icon(xf_zone(r, pos2(300.0, 200.0))), CursorIcon::ResizeNwSe);
+        assert_eq!(xf_zone(r, pos2(303.0, 203.0)), Some(XfKind::Scale { hx: 1, hy: 1 }));
+        assert_eq!(xf_zone(r, pos2(305.0, 205.0)), Some(XfKind::Rotate));
+        assert_eq!(transform_cursor_icon(xf_zone(r, pos2(305.0, 205.0))), CursorIcon::None);
+        assert_eq!(xf_zone(r, pos2(306.0, 206.0)), Some(XfKind::Rotate));
+        assert_eq!(xf_zone(r, pos2(95.0, 95.0)), Some(XfKind::Rotate));
     }
 
     #[test]
