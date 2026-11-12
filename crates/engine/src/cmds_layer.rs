@@ -13,7 +13,8 @@ use std::sync::Arc;
 
 /// Layer colours offered next to the colour picker (sRGB): those new layers take in turn,
 /// then a few more, all bright enough to read as outlines on a dark or a light stage.
-pub const LAYER_COLORS: [u32; 12] = [0x4fa3ff, 0xff6b4a, 0x66bb6a, 0xffd54a, 0xba68c8, 0x4dd0e1, 0xff8a65, 0xf06292, 0xaed581, 0x9575cd, 0xe0e0e0, 0x8d6e63];
+pub const LAYER_COLORS: [u32; 12] =
+    [0x4fa3ff, 0xff6b4a, 0x66bb6a, 0xffd54a, 0xba68c8, 0x4dd0e1, 0xff8a65, 0xf06292, 0xaed581, 0x9575cd, 0xe0e0e0, 0x8d6e63];
 
 pub fn specs() -> Vec<CommandSpec> {
     let c = |id, label, menu, shortcut, params, mutates, run| CommandSpec { id, label, menu, shortcut, params, mutates, run };
@@ -27,8 +28,24 @@ pub fn specs() -> Vec<CommandSpec> {
             true,
             set_onion as crate::RunFn,
         ),
-        c("layer.set_color", "Layer Colour", "", None, "{color: \"#rrggbb\", layer?} the layer's colour: its outlines in outline mode and its bar on the timeline", true, set_color),
-        c("layer.set_height", "Layer Height", "", None, "{height: 100 | 200 | 300 (percent of a normal row), layer?} the layer's row height on the timeline", true, set_height),
+        c(
+            "layer.set_color",
+            "Layer Colour",
+            "",
+            None,
+            "{color: \"#rrggbb\", layer?} the layer's colour: its outlines in outline mode and its bar on the timeline",
+            true,
+            set_color,
+        ),
+        c(
+            "layer.set_height",
+            "Layer Height",
+            "",
+            None,
+            "{height: 100 | 200 | 300 (percent of a normal row), layer?} the layer's row height on the timeline",
+            true,
+            set_height,
+        ),
         c(
             "layer.set_properties",
             "Layer Properties",
@@ -38,7 +55,15 @@ pub fn specs() -> Vec<CommandSpec> {
             true,
             set_properties,
         ),
-        c("layer.properties", "Get Layer Properties", "", None, "{layer?} the layer's name, type, colour, outline, height (percent), visible, locked and onion", false, |s, p| properties(s, layer_id(s, p)?)),
+        c(
+            "layer.properties",
+            "Get Layer Properties",
+            "",
+            None,
+            "{layer?} the layer's name, type, colour, outline, height (percent), visible, locked and onion",
+            false,
+            |s, p| properties(s, layer_id(s, p)?),
+        ),
     ]
 }
 

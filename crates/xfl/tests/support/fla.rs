@@ -49,7 +49,16 @@ pub struct Variant {
     pub zip64: bool,
 }
 
-const BASE: Variant = Variant { name: "", compression: Compression::Deflate, folders: false, mimetype: false, backslashes: false, names: Names::Utf8Flag, descriptors: false, zip64: false };
+const BASE: Variant = Variant {
+    name: "",
+    compression: Compression::Deflate,
+    folders: false,
+    mimetype: false,
+    backslashes: false,
+    names: Names::Utf8Flag,
+    descriptors: false,
+    zip64: false,
+};
 
 /// Every variant each corpus package is checked in.
 pub const VARIANTS: &[Variant] = &[
@@ -61,7 +70,16 @@ pub const VARIANTS: &[Variant] = &[
     Variant { name: "Unicode path fields", names: Names::UnicodeExtra, ..BASE },
     Variant { name: "data descriptors", descriptors: true, compression: Compression::Mixed, ..BASE },
     Variant { name: "ZIP64", zip64: true, compression: Compression::Mixed, ..BASE },
-    Variant { name: "everything at once", compression: Compression::Mixed, folders: true, mimetype: true, backslashes: true, names: Names::Cp437, descriptors: true, zip64: true },
+    Variant {
+        name: "everything at once",
+        compression: Compression::Mixed,
+        folders: true,
+        mimetype: true,
+        backslashes: true,
+        names: Names::Cp437,
+        descriptors: true,
+        zip64: true,
+    },
 ];
 
 /// One entry as written. Fields a hostile test may change are public.
@@ -109,7 +127,8 @@ pub fn crc32(data: &[u8]) -> u32 {
 
 /// `s` in CP437, if every character is in it.
 pub fn cp437(s: &str) -> Option<Vec<u8>> {
-    const HIGH: &str = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u{a0}";
+    const HIGH: &str =
+        "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u{a0}";
     s.chars().map(|c| if c.is_ascii() { Some(c as u8) } else { HIGH.chars().position(|h| h == c).map(|i| 0x80 + i as u8) }).collect()
 }
 

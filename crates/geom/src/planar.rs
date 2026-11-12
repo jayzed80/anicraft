@@ -555,7 +555,13 @@ impl Map {
             let mut row = Vec::with_capacity(ts.len());
             for &t in ts {
                 let end = t <= 0.0 || t >= 1.0;
-                let p = if t <= 0.0 { s.c[0] } else if t >= 1.0 { s.c[3] } else { eval(&s.c, t) };
+                let p = if t <= 0.0 {
+                    s.c[0]
+                } else if t >= 1.0 {
+                    s.c[3]
+                } else {
+                    eval(&s.c, t)
+                };
                 let v = vs.at(p);
                 if clusters.len() <= v {
                     clusters.resize_with(v + 1, Cluster::default);
@@ -849,7 +855,8 @@ impl Map {
             }
             let item = halves.iter().filter_map(|&h| stroke_of[h / 2]).max().unwrap_or(0);
             // A run along the cutter's edge counts as inside it.
-            let inside = halves.iter().any(|&h| cut_edge[h / 2]) || halves.get(halves.len() / 2).is_some_and(|&h| cutter.covers(eval(&self.curve(h), 0.5), FillRule::EvenOdd));
+            let inside = halves.iter().any(|&h| cut_edge[h / 2])
+                || halves.get(halves.len() / 2).is_some_and(|&h| cutter.covers(eval(&self.curve(h), 0.5), FillRule::EvenOdd));
             out.strokes.push(Piece { style: st, path: self.emit(&halves, closed, segs), item, inside });
         }
     }
@@ -870,7 +877,8 @@ impl Map {
                 None => runs.push(run),
             }
         }
-        if closed && runs.len() > 1
+        if closed
+            && runs.len() > 1
             && let (Some(last), Some(first)) = (runs.last(), runs.first())
             && let Some(j) = last.join(first, segs)
         {

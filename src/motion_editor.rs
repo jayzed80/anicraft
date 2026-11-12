@@ -130,8 +130,20 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
     // ---- property list ---------------------------------------------------------------------
     painter.rect_filled(Rect::from_min_max(list.left_top(), pos2(list.right(), list.top() + RULER_H)), 0.0, T.panel_alt);
-    painter.text(pos2(list.left() + 10.0, list.top() + RULER_H * 0.5), Align2::LEFT_CENTER, tr!("Property"), font(Type::Heading), color(Type::Heading));
-    painter.text(pos2(list.right() - 44.0, list.top() + RULER_H * 0.5), Align2::RIGHT_CENTER, tr!("Frame {frame}", frame = app.s.frame + 1), font(Type::DataSmall), color(Type::DataSmall));
+    painter.text(
+        pos2(list.left() + 10.0, list.top() + RULER_H * 0.5),
+        Align2::LEFT_CENTER,
+        tr!("Property"),
+        font(Type::Heading),
+        color(Type::Heading),
+    );
+    painter.text(
+        pos2(list.right() - 44.0, list.top() + RULER_H * 0.5),
+        Align2::RIGHT_CENTER,
+        tr!("Frame {frame}", frame = app.s.frame + 1),
+        font(Type::DataSmall),
+        color(Type::DataSmall),
+    );
     let now = m.props_at(&base, offset as f32);
     // Frames pinned to path points: their X and Y keys are the points' places (ADR 0049).
     let pins = m.pinned_anchors(&base);
@@ -155,7 +167,17 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         let y = rows_top + (r - first) as f32 * ROW_H;
         let row = Rect::from_min_size(pos2(list.left(), y), vec2(LIST_W, ROW_H));
         let selected = app.me_prop == p;
-        painter.rect_filled(row, 0.0, if selected { T.accent_dim } else if r % 2 == 0 { T.panel } else { T.panel_alt });
+        painter.rect_filled(
+            row,
+            0.0,
+            if selected {
+                T.accent_dim
+            } else if r % 2 == 0 {
+                T.panel
+            } else {
+                T.panel_alt
+            },
+        );
         let track = m.track(p);
         let label = crate::i18n::t(p.label());
         // Groups (Position, Transform, Colour effect) are set apart by a rule.
@@ -165,12 +187,24 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             }
             last_group = p.group();
         }
-        painter.text(pos2(row.left() + 12.0, row.center().y), Align2::LEFT_CENTER, label, font(Type::Body), if track.is_some() { T.text } else { T.text_dim });
+        painter.text(
+            pos2(row.left() + 12.0, row.center().y),
+            Align2::LEFT_CENTER,
+            label,
+            font(Type::Body),
+            if track.is_some() { T.text } else { T.text_dim },
+        );
         if track.is_some() {
             painter.text(pos2(row.left() + 84.0, row.center().y), Align2::LEFT_CENTER, tr!("keyed"), font(Type::Caption), T.tween_motion);
         }
         let rr = ui.interact(row, ui.id().with(("me_row", p.key())), Sense::click());
-        a11y::control(ui, &rr, WidgetType::SelectableLabel, &if track.is_some() { tr!("{property} · keyed", property = label) } else { label.to_string() }, Some(selected));
+        a11y::control(
+            ui,
+            &rr,
+            WidgetType::SelectableLabel,
+            &if track.is_some() { tr!("{property} · keyed", property = label) } else { label.to_string() },
+            Some(selected),
+        );
         if rr.clicked() {
             app.me_prop = p;
             app.me_key = None;
@@ -183,7 +217,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         let suffix = if p.unit() == "px" { " px" } else { p.unit() };
         // In a child placed on the row, so the field never grows the dock.
         let mut cell = ui.new_child(egui::UiBuilder::new().max_rect(field).layout(egui::Layout::left_to_right(egui::Align::Center)));
-        let r = with_type(&mut cell, Type::Data, |ui| ui.add_sized(vec2(field.width(), field.height()), egui::DragValue::new(&mut v).speed(speed).range(range).max_decimals(1).suffix(suffix)).named(label));
+        let r = with_type(&mut cell, Type::Data, |ui| {
+            ui.add_sized(vec2(field.width(), field.height()), egui::DragValue::new(&mut v).speed(speed).range(range).max_decimals(1).suffix(suffix))
+                .named(label)
+        });
         if r.changed() {
             app.me_prop = p;
             app.s.begin_gesture(tr_noop!("Property keyframe"));
@@ -196,13 +233,29 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         if tr.hovered() {
             painter.rect_filled(toggle, T.rc(), T.hover);
         }
-        diamond(&painter, toggle.center(), 5.0, if keyed { T.text } else { Color32::TRANSPARENT }, Stroke::new(1.5, if keyed { T.text } else { T.text_faint }));
+        diamond(
+            &painter,
+            toggle.center(),
+            5.0,
+            if keyed { T.text } else { Color32::TRANSPARENT },
+            Stroke::new(1.5, if keyed { T.text } else { T.text_faint }),
+        );
         let tip = match (keyed, pin_at(p, offset)) {
-            (true, Some(q)) if m.path.is_some() && interior(&pins, q) => tr!("Unpin point {anchor} of the motion path from frame {frame}: its X and Y keyframes go", anchor = q.anchor, frame = app.s.frame + 1),
+            (true, Some(q)) if m.path.is_some() && interior(&pins, q) => tr!(
+                "Unpin point {anchor} of the motion path from frame {frame}: its X and Y keyframes go",
+                anchor = q.anchor,
+                frame = app.s.frame + 1
+            ),
             (true, _) => tr!("Remove the {property} keyframe at frame {frame}", property = label, frame = app.s.frame + 1),
             (false, _) => tr!("Add a {property} keyframe at frame {frame}", property = label, frame = app.s.frame + 1),
         };
-        a11y::control(ui, &tr, WidgetType::Checkbox, &tr!("{property} keyframe at frame {frame}", property = label, frame = app.s.frame + 1), Some(keyed));
+        a11y::control(
+            ui,
+            &tr,
+            WidgetType::Checkbox,
+            &tr!("{property} keyframe at frame {frame}", property = label, frame = app.s.frame + 1),
+            Some(keyed),
+        );
         if tr.on_hover_text(tip).clicked() {
             app.me_prop = p;
             if keyed {
@@ -275,13 +328,30 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         x += 2.0;
     }
     gp.add(egui::Shape::line(pts, Stroke::new(2.0, if track.is_some() { T.tween_motion } else { T.text_faint })));
-    gp.text(pos2(graph.right() - 8.0, graph.top() + 6.0), Align2::RIGHT_TOP, format!("{label} · {}", fmt(p, now.get(p))), font(Type::Data), color(Type::Data));
+    gp.text(
+        pos2(graph.right() - 8.0, graph.top() + 6.0),
+        Align2::RIGHT_TOP,
+        format!("{label} · {}", fmt(p, now.get(p))),
+        font(Type::Data),
+        color(Type::Data),
+    );
     if track.is_none() {
-        gp.text(graph.center(), Align2::CENTER_CENTER, tr!("{property} has no keyframes: it stays {value}. Click ◇ or drag its value to key it here.", property = label, value = fmt(p, base.get(p))), font(Type::Caption), color(Type::Caption));
+        gp.text(
+            graph.center(),
+            Align2::CENTER_CENTER,
+            tr!(
+                "{property} has no keyframes: it stays {value}. Click ◇ or drag its value to key it here.",
+                property = label,
+                value = fmt(p, base.get(p))
+            ),
+            font(Type::Caption),
+            color(Type::Caption),
+        );
     }
 
     // Keys and the selected segment's handles.
-    let keys: Vec<(u32, f32, Easing)> = track.map(|t| t.keys.iter().filter(|k| k.frame < frames).map(|k| (k.frame, k.value, k.ease)).collect()).unwrap_or_default();
+    let keys: Vec<(u32, f32, Easing)> =
+        track.map(|t| t.keys.iter().filter(|k| k.frame < frames).map(|k| (k.frame, k.value, k.ease)).collect()).unwrap_or_default();
     // The selected key: the one picked, else the one starting the segment at the playhead.
     let sel_key = app.me_key.filter(|f| keys.iter().any(|k| k.0 == *f)).or_else(|| keys.iter().rev().find(|k| k.0 <= offset).map(|k| k.0));
     let handles: Option<[Pos2; 4]> = sel_key.and_then(|f| {
@@ -312,7 +382,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         }
     }
     if matches!(p, Property::X | Property::Y) && pins.len() > 2 {
-        gp.text(pos2(graph.right() - 8.0, graph.bottom() - 6.0), Align2::RIGHT_BOTTOM, tr!("Blue keys are pinned motion path points: drag one to move its point"), font(Type::Caption), T.tween_motion);
+        gp.text(
+            pos2(graph.right() - 8.0, graph.bottom() - 6.0),
+            Align2::RIGHT_BOTTOM,
+            tr!("Blue keys are pinned motion path points: drag one to move its point"),
+            font(Type::Caption),
+            T.tween_motion,
+        );
     }
 
     // ---- graph interaction -------------------------------------------------------------------
@@ -416,7 +492,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         }
     }
     match hover.and_then(near_key).and_then(|f| pin_at(p, f)) {
-        Some(q) => gr.on_hover_text_at_pointer(tr!("Frame {frame} · point {anchor} of the motion path: drag to move the point", frame = start + q.frame + 1, anchor = q.anchor)),
+        Some(q) => gr.on_hover_text_at_pointer(tr!(
+            "Frame {frame} · point {anchor} of the motion path: drag to move the point",
+            frame = start + q.frame + 1,
+            anchor = q.anchor
+        )),
         None => gr.on_hover_text_at_pointer(tr!("Drag a key up or down to change it, or a handle to shape the ease. Double-click to add a key.")),
     };
 
@@ -445,22 +525,26 @@ fn footer(app: &mut App, ui: &mut egui::Ui, body: Rect, track: Option<&Track>, s
     let bar = Rect::from_min_max(pos2(body.left(), body.bottom() - FOOTER_H), body.right_bottom());
     ui.painter().rect_filled(bar, SQUARE, T.panel_alt);
     ui.painter().line_segment([bar.left_top(), bar.right_top()], Stroke::new(1.0, T.border));
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(bar.shrink2(vec2(10.0, 4.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    let mut child =
+        ui.new_child(egui::UiBuilder::new().max_rect(bar.shrink2(vec2(10.0, 4.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
     let ui = &mut child;
     let p = app.me_prop;
     let seg = sel_key.zip(track).and_then(|(f, t)| t.key_at(f).filter(|i| *i + 1 < t.keys.len()).and_then(|i| t.keys.get(i)).map(|k| (f, k.ease)));
     ui.label(text(Type::Label, tr!("{property} ease", property = crate::i18n::t(p.label()))));
     match seg {
         Some((f, ease)) => {
-            egui::ComboBox::from_id_salt("me_ease").width(160.0).selected_text(crate::timeline::easing_label(&ease)).show_ui(ui, |ui| {
-                for (name, e) in Easing::PRESETS {
-                    if ui.selectable_label(ease == e, crate::i18n::t(name)).clicked() {
-                        app.run("motion.set_ease", json!({"property": p.key(), "frame": start + f, "easing": crate::timeline::easing_param(e)}));
+            egui::ComboBox::from_id_salt("me_ease")
+                .width(160.0)
+                .selected_text(crate::timeline::easing_label(&ease))
+                .show_ui(ui, |ui| {
+                    for (name, e) in Easing::PRESETS {
+                        if ui.selectable_label(ease == e, crate::i18n::t(name)).clicked() {
+                            app.run("motion.set_ease", json!({"property": p.key(), "frame": start + f, "easing": crate::timeline::easing_param(e)}));
+                        }
                     }
-                }
-            })
-            .response
-            .set_name(tr!("Ease"));
+                })
+                .response
+                .set_name(tr!("Ease"));
             if ui.button(tr!("Same for all")).on_hover_text(tr!("Give every property's segment at this frame this ease")).clicked() {
                 app.run("motion.set_ease", json!({"frame": start + f, "easing": crate::timeline::easing_param(ease)}));
             }
@@ -471,7 +555,10 @@ fn footer(app: &mut App, ui: &mut egui::Ui, body: Rect, track: Option<&Track>, s
     }
     ui.separator();
     // Animate's "+" for colour effects: list another style's properties (keying one adds it).
-    let missing: Vec<ColorStyle> = [ColorStyle::Alpha, ColorStyle::Brightness, ColorStyle::Tint, ColorStyle::Advanced].into_iter().filter(|s| !rows.iter().any(|p| p.style() == Some(*s))).collect();
+    let missing: Vec<ColorStyle> = [ColorStyle::Alpha, ColorStyle::Brightness, ColorStyle::Tint, ColorStyle::Advanced]
+        .into_iter()
+        .filter(|s| !rows.iter().any(|p| p.style() == Some(*s)))
+        .collect();
     if !missing.is_empty() {
         ui.menu_button(tr!("Add Colour Effect"), |ui| {
             for st in missing {
@@ -485,7 +572,11 @@ fn footer(app: &mut App, ui: &mut egui::Ui, body: Rect, track: Option<&Track>, s
         .response
         .on_hover_text(tr!("List a colour effect style's properties here; keying one adds it to the tween"));
     }
-    if ui.button(tr!("Remove Tween")).on_hover_text(tr!("The object stays as it is on the span's first frame ({undo} to undo)", undo = app.undo_key())).clicked() {
+    if ui
+        .button(tr!("Remove Tween"))
+        .on_hover_text(tr!("The object stays as it is on the span's first frame ({undo} to undo)", undo = app.undo_key()))
+        .clicked()
+    {
         app.run("timeline.remove_tween", json!({}));
     }
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -526,7 +617,13 @@ mod tests {
     #[test]
     fn the_view_holds_the_curve_its_keys_and_handles() {
         use anicraft_engine::doc::PropertyKey;
-        let t = Track { property: Property::Y, keys: vec![PropertyKey { frame: 0, value: 0.0, ease: Easing::CubicBezier(0.3, 1.8, 0.7, 1.0) }, PropertyKey { frame: 10, value: 100.0, ease: Easing::Linear }] };
+        let t = Track {
+            property: Property::Y,
+            keys: vec![
+                PropertyKey { frame: 0, value: 0.0, ease: Easing::CubicBezier(0.3, 1.8, 0.7, 1.0) },
+                PropertyKey { frame: 10, value: 100.0, ease: Easing::Linear },
+            ],
+        };
         let (lo, hi) = value_range(Some(&t), 0.0, 11, Property::Y);
         // The overshooting handle (180 % of the rise) is inside the view, with a margin.
         assert!(lo < 0.0 && hi > 180.0, "{lo} {hi}");

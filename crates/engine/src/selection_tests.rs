@@ -471,7 +471,10 @@ fn every_command_survives_a_selection_on_two_layers() {
     let mut cmds = crate::commands();
     cmds.retain(|c| !c.id.starts_with("file."));
     for spec in cmds {
-        for p in [json!({}), json!({"dx": 3, "dy": 4, "x": 50, "y": 50, "name": "x", "alpha": 0.5, "filters": [], "mode": "multiply", "loop": "loop", "kind": "movie_clip", "color": "#123456", "profile": "bulge", "text": "t"})] {
+        for p in [
+            json!({}),
+            json!({"dx": 3, "dy": 4, "x": 50, "y": 50, "name": "x", "alpha": 0.5, "filters": [], "mode": "multiply", "loop": "loop", "kind": "movie_clip", "color": "#123456", "profile": "bulge", "text": "t"}),
+        ] {
             let (mut s, ..) = two_layers();
             let _ = s.execute(spec.id, &p);
             // Undo and redo always work, and the selection stays on visible, unlocked layers.

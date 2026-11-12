@@ -120,7 +120,8 @@ fn two_fills() -> Session {
 }
 
 fn fill_area(s: &Session, c: u32) -> f64 {
-    let els: Vec<_> = s.visible_elements().into_iter().filter(|e| matches!(&e.kind, ElementKind::Shape(sh) if fill_of(sh) == Some(Rgba::hex(c)))).collect();
+    let els: Vec<_> =
+        s.visible_elements().into_iter().filter(|e| matches!(&e.kind, ElementKind::Shape(sh) if fill_of(sh) == Some(Rgba::hex(c)))).collect();
     measure_els(&els).0
 }
 
@@ -131,16 +132,31 @@ fn erase_selected_fills_and_erase_inside_keep_the_other_fills() {
     let mut s = two_fills();
     let r = run(&mut s, "draw.erase", json!({"points": band, "size": 20, "mode": "selected_fills"}));
     assert_eq!(r["erased"], false, "nothing selected, nothing erased");
-    let blue = s.visible_elements().iter().find(|e| matches!(&e.kind, ElementKind::Shape(sh) if fill_of(sh) == Some(Rgba::hex(0x0000ff)))).map(|e| e.id.0).unwrap();
+    let blue = s
+        .visible_elements()
+        .iter()
+        .find(|e| matches!(&e.kind, ElementKind::Shape(sh) if fill_of(sh) == Some(Rgba::hex(0x0000ff))))
+        .map(|e| e.id.0)
+        .unwrap();
     run(&mut s, "element.select", json!({"ids": [blue]}));
     run(&mut s, "draw.erase", json!({"points": band, "size": 20, "mode": "selected_fills"}));
-    assert!(near(fill_area(&s, 0x0000ff), 8_000.0, 30.0) && near(fill_area(&s, 0xff0000), 10_000.0, 0.01), "{} {}", fill_area(&s, 0x0000ff), fill_area(&s, 0xff0000));
+    assert!(
+        near(fill_area(&s, 0x0000ff), 8_000.0, 30.0) && near(fill_area(&s, 0xff0000), 10_000.0, 0.01),
+        "{} {}",
+        fill_area(&s, 0x0000ff),
+        fill_area(&s, 0xff0000)
+    );
     assert_eq!(s.selection.len(), 2, "both blue pieces stay selected");
     // Inside: only the fill the stroke starts on (a 50 × 20 band and the round start's half disc).
     let mut s = two_fills();
     run(&mut s, "draw.erase", json!({"points": stroke(150.0, 150.0, 350.0, 150.0), "size": 20, "mode": "inside"}));
     let want = 10_000.0 - 1_000.0 - std::f64::consts::PI * 50.0;
-    assert!(near(fill_area(&s, 0x0000ff), want, 20.0) && near(fill_area(&s, 0xff0000), 10_000.0, 0.01), "{} {}", fill_area(&s, 0x0000ff), fill_area(&s, 0xff0000));
+    assert!(
+        near(fill_area(&s, 0x0000ff), want, 20.0) && near(fill_area(&s, 0xff0000), 10_000.0, 0.01),
+        "{} {}",
+        fill_area(&s, 0x0000ff),
+        fill_area(&s, 0xff0000)
+    );
     // Starting off the artwork erases nothing, and leaves no undo step.
     let steps = s.history_len();
     let r = run(&mut s, "draw.erase", json!({"points": stroke(50.0, 150.0, 350.0, 150.0), "size": 20, "mode": "inside"}));

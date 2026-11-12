@@ -39,9 +39,33 @@ pub fn specs() -> Vec<CommandSpec> {
             true,
             bucket as crate::RunFn,
         ),
-        c("paint.ink", "Ink Bottle", "", None, "{x, y, color?, width?, profile?, cap?, join?, miter?, style?, dash?, dash_offset?, dot_spacing?} (the tool's line style unless given; see stroke.set_style)", true, ink),
-        c("paint.pick", "Eyedropper", "", None, "{x, y, other?: bool (into the other swatch only: a fill's colour into the stroke, a line's into the fill), slop?} picks the style under the point on any visible layer into the tool settings: a fill's paint (solid, gradient or bitmap, kept where it is on the stage) into the fill swatch, a line's colour, width and profile into the stroke settings", false, pick_style),
-        c("paint.apply_style", "Apply Style", "", None, "{fill?: bool, stroke?: bool} (default both) gives the selected shapes the fill swatch's paint (shapes with a fill) and the stroke settings (shapes with a line, and drawing objects without one)", true, |s, p| s.each_layer(false, |s| apply_style(s, p))),
+        c(
+            "paint.ink",
+            "Ink Bottle",
+            "",
+            None,
+            "{x, y, color?, width?, profile?, cap?, join?, miter?, style?, dash?, dash_offset?, dot_spacing?} (the tool's line style unless given; see stroke.set_style)",
+            true,
+            ink,
+        ),
+        c(
+            "paint.pick",
+            "Eyedropper",
+            "",
+            None,
+            "{x, y, other?: bool (into the other swatch only: a fill's colour into the stroke, a line's into the fill), slop?} picks the style under the point on any visible layer into the tool settings: a fill's paint (solid, gradient or bitmap, kept where it is on the stage) into the fill swatch, a line's colour, width and profile into the stroke settings",
+            false,
+            pick_style,
+        ),
+        c(
+            "paint.apply_style",
+            "Apply Style",
+            "",
+            None,
+            "{fill?: bool, stroke?: bool} (default both) gives the selected shapes the fill swatch's paint (shapes with a fill) and the stroke settings (shapes with a line, and drawing objects without one)",
+            true,
+            |s, p| s.each_layer(false, |s| apply_style(s, p)),
+        ),
     ]
 }
 
@@ -67,11 +91,19 @@ fn pick(items: &[DisplayItem], p: Vec2, slop: f32) -> Option<(ElementId, bool)> 
 
 fn element_shape_mut(s: &mut Session, id: ElementId) -> Result<&mut Shape> {
     let kf = s.editable_keyframe()?;
-    let el = kf.elements_mut_where(|e| e == id).into_iter().next().ok_or_else(|| EngineError::State("that shape is not on the active layer at this frame".into()))?;
+    let el = kf
+        .elements_mut_where(|e| e == id)
+        .into_iter()
+        .next()
+        .ok_or_else(|| EngineError::State("that shape is not on the active layer at this frame".into()))?;
     match &mut el.kind {
         ElementKind::Shape(sh) => Ok(sh),
-        ElementKind::Symbol { .. } => Err(EngineError::State("symbol instances keep their own colours; break it apart (Ctrl+B) or edit the symbol to paint it".into())),
-        ElementKind::Text(_) => Err(EngineError::State("text has its own colour (Properties); break it apart (Ctrl+B) to paint it as a shape".into())),
+        ElementKind::Symbol { .. } => {
+            Err(EngineError::State("symbol instances keep their own colours; break it apart (Ctrl+B) or edit the symbol to paint it".into()))
+        }
+        ElementKind::Text(_) => {
+            Err(EngineError::State("text has its own colour (Properties); break it apart (Ctrl+B) to paint it as a shape".into()))
+        }
         ElementKind::Camera => Err(EngineError::State("the camera has no paint (its tint is in Properties)".into())),
     }
 }
@@ -103,7 +135,8 @@ fn bucket(s: &mut Session, p: &Value) -> Result<Value> {
     let was_exact = exact.is_some();
     let path = match exact {
         Some(p) => p,
-        None => enclosed_region(&items, at, gap)?.ok_or_else(|| EngineError::State("this area isn't closed. Close the outline, or choose a larger gap size".into()))?,
+        None => enclosed_region(&items, at, gap)?
+            .ok_or_else(|| EngineError::State("this area isn't closed. Close the outline, or choose a larger gap size".into()))?,
     };
     let c = path.bounds().center();
     let local = path.transformed(&Affine::translate(-c.x, -c.y));
@@ -113,14 +146,22 @@ fn bucket(s: &mut Session, p: &Value) -> Result<Value> {
         name: String::new(),
         transform: Affine::translate(c.x, c.y),
         color: ColorEffect::default(),
-        kind: ElementKind::Shape(Shape { path: Arc::new(local), fill: Some(paint.transformed(&Affine::translate(-c.x, -c.y))), stroke: None, fill_rule: FillRule::EvenOdd, merge: !object }),
+        kind: ElementKind::Shape(Shape {
+            path: Arc::new(local),
+            fill: Some(paint.transformed(&Affine::translate(-c.x, -c.y))),
+            stroke: None,
+            fill_rule: FillRule::EvenOdd,
+            merge: !object,
+        }),
     };
     if !object {
         // Raw: behind the drawing, so it takes only what is empty and joins the fills of its
         // colour it meets; the lines that bound it stay on top.
         let ids = crate::merge::merge_in_order(s, vec![el], crate::merge::Order::Behind)?;
         s.selection.clear();
-        return Ok(json!({"element": ids.first().map(|e| e.0), "elements": ids.iter().map(|e| e.0).collect::<Vec<_>>(), "merged": true, "exact": was_exact}));
+        return Ok(
+            json!({"element": ids.first().map(|e| e.0), "elements": ids.iter().map(|e| e.0).collect::<Vec<_>>(), "merged": true, "exact": was_exact}),
+        );
     }
     let kf = s.editable_keyframe()?;
     if kf.elements.len() >= 100_000 {
@@ -188,7 +229,12 @@ fn enclosed_region(items: &[DisplayItem], at: Vec2, gap: f32) -> Result<Option<P
             if bb.is_empty() {
                 continue;
             }
-            let ir = IRect { x0: (bb.min.x.floor() as i32).max(0), y0: (bb.min.y.floor() as i32).max(0), x1: (bb.max.x.ceil() as i32 + 1).min(w as i32), y1: (bb.max.y.ceil() as i32 + 1).min(h as i32) };
+            let ir = IRect {
+                x0: (bb.min.x.floor() as i32).max(0),
+                y0: (bb.min.y.floor() as i32).max(0),
+                x1: (bb.max.x.ceil() as i32 + 1).min(w as i32),
+                y1: (bb.max.y.ceil() as i32 + 1).min(h as i32),
+            };
             if ir.is_empty() {
                 continue;
             }
@@ -282,7 +328,14 @@ fn distance(src: &[bool], w: usize, h: usize) -> Vec<f32> {
     for y in 0..h as isize {
         for x in 0..w as isize {
             let i = y as usize * w + x as usize;
-            let v = d.get(i).copied().unwrap_or(FAR).min(at(&d, x - 1, y) + a).min(at(&d, x, y - 1) + a).min(at(&d, x - 1, y - 1) + b).min(at(&d, x + 1, y - 1) + b);
+            let v = d
+                .get(i)
+                .copied()
+                .unwrap_or(FAR)
+                .min(at(&d, x - 1, y) + a)
+                .min(at(&d, x, y - 1) + a)
+                .min(at(&d, x - 1, y - 1) + b)
+                .min(at(&d, x + 1, y - 1) + b);
             if let Some(c) = d.get_mut(i) {
                 *c = v;
             }
@@ -291,7 +344,14 @@ fn distance(src: &[bool], w: usize, h: usize) -> Vec<f32> {
     for y in (0..h as isize).rev() {
         for x in (0..w as isize).rev() {
             let i = y as usize * w + x as usize;
-            let v = d.get(i).copied().unwrap_or(FAR).min(at(&d, x + 1, y) + a).min(at(&d, x, y + 1) + a).min(at(&d, x + 1, y + 1) + b).min(at(&d, x - 1, y + 1) + b);
+            let v = d
+                .get(i)
+                .copied()
+                .unwrap_or(FAR)
+                .min(at(&d, x + 1, y) + a)
+                .min(at(&d, x, y + 1) + a)
+                .min(at(&d, x + 1, y + 1) + b)
+                .min(at(&d, x - 1, y + 1) + b);
             if let Some(c) = d.get_mut(i) {
                 *c = v;
             }
@@ -400,7 +460,9 @@ fn pick_style(s: &mut Session, p: &Value) -> Result<Value> {
                     "custom"
                 }
             };
-            Ok(json!({"picked": "line", "into": "stroke", "color": stroke.color.to_hex(), "width": st.stroke_width, "profile": profile, "cap": st.line.cap.key(), "join": st.line.join.key(), "style": st.line.dash_kind().key()}))
+            Ok(
+                json!({"picked": "line", "into": "stroke", "color": stroke.color.to_hex(), "width": st.stroke_width, "profile": profile, "cap": st.line.cap.key(), "join": st.line.join.key(), "style": st.line.dash_kind().key()}),
+            )
         }
         None => Err(EngineError::State("click a fill or a line to pick its colour".into())),
     }

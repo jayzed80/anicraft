@@ -281,7 +281,8 @@ fn still(kind: Kind) -> Result<Encoded> {
 // ----- the files ---------------------------------------------------------------------------
 
 fn png_chunk(out: &mut Vec<u8>, id: &[u8; 4], data: &[u8]) -> Result<()> {
-    let len = u32::try_from(data.len()).ok().filter(|l| *l < 1 << 31).ok_or_else(|| EngineError::Format("an animated PNG frame is too large".into()))?;
+    let len =
+        u32::try_from(data.len()).ok().filter(|l| *l < 1 << 31).ok_or_else(|| EngineError::Format("an animated PNG frame is too large".into()))?;
     out.extend_from_slice(&len.to_be_bytes());
     let from = out.len();
     out.extend_from_slice(id);
@@ -378,11 +379,11 @@ pub(crate) fn plays(p: &Value) -> Result<u32> {
     match p.get("loop") {
         None | Some(Value::Null) | Some(Value::Bool(true)) => Ok(0),
         Some(Value::Bool(false)) => Ok(1),
-        Some(v) => v
-            .as_u64()
-            .and_then(|n| u32::try_from(n).ok())
-            .filter(|n| *n <= MAX_PLAYS)
-            .ok_or_else(|| EngineError::Param(format!("param 'loop' must be true (forever), false (once) or how many times it plays (0 is forever, at most {MAX_PLAYS})"))),
+        Some(v) => v.as_u64().and_then(|n| u32::try_from(n).ok()).filter(|n| *n <= MAX_PLAYS).ok_or_else(|| {
+            EngineError::Param(format!(
+                "param 'loop' must be true (forever), false (once) or how many times it plays (0 is forever, at most {MAX_PLAYS})"
+            ))
+        }),
     }
 }
 

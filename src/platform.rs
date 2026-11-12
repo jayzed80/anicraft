@@ -86,7 +86,20 @@ pub fn system_high_contrast() -> Option<bool> {
 #[cfg(not(any(windows, target_os = "macos", target_arch = "wasm32")))]
 fn portal_contrast() -> Option<bool> {
     let out = std::process::Command::new("gdbus") // i18n-exempt: a command line
-        .args(["call", "--session", "--timeout", "1", "--dest", "org.freedesktop.portal.Desktop", "--object-path", "/org/freedesktop/portal/desktop", "--method", "org.freedesktop.portal.Settings.ReadOne", "org.freedesktop.appearance", "contrast"]) // i18n-exempt: a command line
+        .args([
+            "call",
+            "--session",
+            "--timeout",
+            "1",
+            "--dest",
+            "org.freedesktop.portal.Desktop",
+            "--object-path",
+            "/org/freedesktop/portal/desktop",
+            "--method",
+            "org.freedesktop.portal.Settings.ReadOne",
+            "org.freedesktop.appearance",
+            "contrast",
+        ]) // i18n-exempt: a command line
         .output()
         .ok()
         .filter(|o| o.status.success())?;
@@ -96,7 +109,11 @@ fn portal_contrast() -> Option<bool> {
 /// GNOME's own switch, for desktops without the portal setting.
 #[cfg(not(any(windows, target_os = "macos", target_arch = "wasm32")))]
 fn gnome_high_contrast() -> Option<bool> {
-    let out = std::process::Command::new("gsettings").args(["get", "org.gnome.desktop.a11y.interface", "high-contrast"]).output().ok().filter(|o| o.status.success())?; // i18n-exempt: a command line
+    let out = std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.a11y.interface", "high-contrast"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?; // i18n-exempt: a command line
     match String::from_utf8_lossy(&out.stdout).trim() {
         "true" => Some(true),
         "false" => Some(false),
@@ -296,9 +313,15 @@ pub fn unavailable(cmd: &str) -> Option<&'static str> {
         return None;
     }
     match cmd {
-        "file.export_video" => Some(tr_noop!("Video export runs ffmpeg, which a web browser can't start: use the desktop app, or export an animated GIF or a PNG sequence")),
-        "plugin.install" | "plugin.remove" | "plugin.reload" => Some(tr_noop!("Plug-ins are installed into a folder on your computer: use the desktop app")),
-        "file.save_as_template" => Some(tr_noop!("Your templates are kept in a folder on your computer: use the desktop app (the built-in templates work here)")),
+        "file.export_video" => Some(tr_noop!(
+            "Video export runs ffmpeg, which a web browser can't start: use the desktop app, or export an animated GIF or a PNG sequence"
+        )),
+        "plugin.install" | "plugin.remove" | "plugin.reload" => {
+            Some(tr_noop!("Plug-ins are installed into a folder on your computer: use the desktop app"))
+        }
+        "file.save_as_template" => {
+            Some(tr_noop!("Your templates are kept in a folder on your computer: use the desktop app (the built-in templates work here)"))
+        }
         _ => None,
     }
 }
@@ -717,8 +740,13 @@ mod tests {
     #[test]
     fn portal_replies_parse() {
         assert_eq!(parse_portal_uint("(<<uint32 1>>,)"), Some(1));
-        assert_eq!(parse_portal_uint("(<uint32 0>,)
-"), Some(0));
+        assert_eq!(
+            parse_portal_uint(
+                "(<uint32 0>,)
+"
+            ),
+            Some(0)
+        );
         assert_eq!(parse_portal_uint("Error: no such key"), None);
     }
 

@@ -58,7 +58,10 @@ pub fn commit(app: &mut App, xf: Xf) {
         Some(v) => {
             // The engine's reason is English from below the shell.
             let why = v["reason"].as_str().map_or(std::borrow::Cow::Borrowed(tr!("nothing to erase there")), crate::i18n::t_dyn);
-            app.status_ok(tr!("Nothing erased: {why}. The eraser works on lines and fills drawn with Object Drawing off; drawing objects and symbols are kept.", why = why));
+            app.status_ok(tr!(
+                "Nothing erased: {why}. The eraser works on lines and fills drawn with Object Drawing off; drawing objects and symbols are kept.",
+                why = why
+            ));
         }
         None => {}
     }
@@ -68,7 +71,11 @@ pub fn commit(app: &mut App, xf: Xf) {
 pub fn faucet(app: &mut App, p: Vec2, zoom: f32) {
     if let Some(v) = app.run("draw.faucet", json!({"x": p.x, "y": p.y, "slop": 4.0 / zoom.max(1e-3)})) {
         let undo = app.undo_key();
-        app.status_ok(if v["kind"] == "line" { tr!("Deleted the line. {undo} to undo.", undo = undo) } else { tr!("Deleted the fill. {undo} to undo.", undo = undo) });
+        app.status_ok(if v["kind"] == "line" {
+            tr!("Deleted the line. {undo} to undo.", undo = undo)
+        } else {
+            tr!("Deleted the fill. {undo} to undo.", undo = undo)
+        });
     }
 }
 
@@ -107,7 +114,11 @@ pub fn eyedropper(app: &mut App, p: Vec2, shift: bool, zoom: f32) {
     let color = v["color"].as_str().unwrap_or("").to_string();
     let into_fill = v["into"] == "fill";
     if shift {
-        app.status_ok(if into_fill { tr!("Picked {color} into the fill colour.", color = color) } else { tr!("Picked {color} into the stroke colour.", color = color) });
+        app.status_ok(if into_fill {
+            tr!("Picked {color} into the fill colour.", color = color)
+        } else {
+            tr!("Picked {color} into the stroke colour.", color = color)
+        });
         return;
     }
     // One whole sentence per kind of paint, so each translates as a sentence.
@@ -120,11 +131,39 @@ pub fn eyedropper(app: &mut App, p: Vec2, shift: bool, zoom: f32) {
             let n = r["changed"].as_u64().unwrap_or(0);
             let undo = app.undo_key();
             app.status_ok(match paint {
-                Some("linear") => trn!("Applied the picked linear gradient to {n} shape. {undo} to undo.", "Applied the picked linear gradient to {n} shapes. {undo} to undo.", n, undo = undo),
-                Some("radial") => trn!("Applied the picked radial gradient to {n} shape. {undo} to undo.", "Applied the picked radial gradient to {n} shapes. {undo} to undo.", n, undo = undo),
-                Some("bitmap") => trn!("Applied the picked bitmap fill to {n} shape. {undo} to undo.", "Applied the picked bitmap fill to {n} shapes. {undo} to undo.", n, undo = undo),
-                _ if into_fill => trn!("Applied the picked fill {color} to {n} shape. {undo} to undo.", "Applied the picked fill {color} to {n} shapes. {undo} to undo.", n, color = color, undo = undo),
-                _ => trn!("Applied the picked line {color}, {width} px to {n} shape. {undo} to undo.", "Applied the picked line {color}, {width} px to {n} shapes. {undo} to undo.", n, color = color, width = width, undo = undo),
+                Some("linear") => trn!(
+                    "Applied the picked linear gradient to {n} shape. {undo} to undo.",
+                    "Applied the picked linear gradient to {n} shapes. {undo} to undo.",
+                    n,
+                    undo = undo
+                ),
+                Some("radial") => trn!(
+                    "Applied the picked radial gradient to {n} shape. {undo} to undo.",
+                    "Applied the picked radial gradient to {n} shapes. {undo} to undo.",
+                    n,
+                    undo = undo
+                ),
+                Some("bitmap") => trn!(
+                    "Applied the picked bitmap fill to {n} shape. {undo} to undo.",
+                    "Applied the picked bitmap fill to {n} shapes. {undo} to undo.",
+                    n,
+                    undo = undo
+                ),
+                _ if into_fill => trn!(
+                    "Applied the picked fill {color} to {n} shape. {undo} to undo.",
+                    "Applied the picked fill {color} to {n} shapes. {undo} to undo.",
+                    n,
+                    color = color,
+                    undo = undo
+                ),
+                _ => trn!(
+                    "Applied the picked line {color}, {width} px to {n} shape. {undo} to undo.",
+                    "Applied the picked line {color}, {width} px to {n} shapes. {undo} to undo.",
+                    n,
+                    color = color,
+                    width = width,
+                    undo = undo
+                ),
             });
         }
     } else {

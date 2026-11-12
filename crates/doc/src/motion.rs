@@ -21,7 +21,7 @@
 //! time the whole path when only the ends are pinned. Anchors that aren't pinned shape the path
 //! only.
 
-use crate::{ColorEffect, ColorStyle, ColorTransform, Element, ElementId, Easing, Rgba};
+use crate::{ColorEffect, ColorStyle, ColorTransform, Easing, Element, ElementId, Rgba};
 use anicraft_geom::edit::ANCHOR;
 use anicraft_geom::walk::CurveWalk;
 use anicraft_geom::{Affine, Decomposed, Path, PathCmd, Vec2};
@@ -165,7 +165,13 @@ impl Property {
             Property::ScaleX | Property::ScaleY | Property::Alpha | Property::Brightness | Property::Tint => "%",
             Property::RedMultiplier | Property::GreenMultiplier | Property::BlueMultiplier | Property::AlphaMultiplier => "%",
             Property::Rotation | Property::Skew => "°",
-            Property::TintRed | Property::TintGreen | Property::TintBlue | Property::RedOffset | Property::GreenOffset | Property::BlueOffset | Property::AlphaOffset => "",
+            Property::TintRed
+            | Property::TintGreen
+            | Property::TintBlue
+            | Property::RedOffset
+            | Property::GreenOffset
+            | Property::BlueOffset
+            | Property::AlphaOffset => "",
         }
     }
 
@@ -185,7 +191,14 @@ impl Property {
             Property::Alpha => Some(ColorStyle::Alpha),
             Property::Brightness => Some(ColorStyle::Brightness),
             Property::Tint | Property::TintRed | Property::TintGreen | Property::TintBlue => Some(ColorStyle::Tint),
-            Property::RedMultiplier | Property::GreenMultiplier | Property::BlueMultiplier | Property::AlphaMultiplier | Property::RedOffset | Property::GreenOffset | Property::BlueOffset | Property::AlphaOffset => Some(ColorStyle::Advanced),
+            Property::RedMultiplier
+            | Property::GreenMultiplier
+            | Property::BlueMultiplier
+            | Property::AlphaMultiplier
+            | Property::RedOffset
+            | Property::GreenOffset
+            | Property::BlueOffset
+            | Property::AlphaOffset => Some(ColorStyle::Advanced),
         }
     }
 
@@ -210,7 +223,9 @@ impl Property {
             Property::Rotation => -100_000.0..=100_000.0,
             Property::Skew => -89.0..=89.0,
             Property::Alpha | Property::Tint => 0.0..=100.0,
-            Property::Brightness | Property::RedMultiplier | Property::GreenMultiplier | Property::BlueMultiplier | Property::AlphaMultiplier => -100.0..=100.0,
+            Property::Brightness | Property::RedMultiplier | Property::GreenMultiplier | Property::BlueMultiplier | Property::AlphaMultiplier => {
+                -100.0..=100.0
+            }
             Property::TintRed | Property::TintGreen | Property::TintBlue => 0.0..=255.0,
             Property::RedOffset | Property::GreenOffset | Property::BlueOffset | Property::AlphaOffset => -255.0..=255.0,
         }
@@ -241,7 +256,14 @@ impl Props {
     pub fn of(el: &Element) -> Props {
         let d = el.transform.decompose();
         let mut p = Props([0.0; PROPERTIES]);
-        for (q, v) in [(Property::X, d.tx), (Property::Y, d.ty), (Property::ScaleX, d.sx * 100.0), (Property::ScaleY, d.sy * 100.0), (Property::Rotation, d.rotation.to_degrees()), (Property::Skew, d.skew.atan().to_degrees())] {
+        for (q, v) in [
+            (Property::X, d.tx),
+            (Property::Y, d.ty),
+            (Property::ScaleX, d.sx * 100.0),
+            (Property::ScaleY, d.sy * 100.0),
+            (Property::Rotation, d.rotation.to_degrees()),
+            (Property::Skew, d.skew.atan().to_degrees()),
+        ] {
             p.set(q, v);
         }
         p.set_colour(&el.color);
@@ -277,7 +299,9 @@ impl Props {
         let on = |s: ColorStyle| styles.contains(&s);
         let alpha = on(ColorStyle::Alpha).then(|| v(Property::Alpha) / 100.0);
         let bright = on(ColorStyle::Brightness).then(|| v(Property::Brightness) / 100.0);
-        let tint = on(ColorStyle::Tint).then(|| (Rgba::new(v(Property::TintRed) / 255.0, v(Property::TintGreen) / 255.0, v(Property::TintBlue) / 255.0, 1.0), v(Property::Tint) / 100.0));
+        let tint = on(ColorStyle::Tint).then(|| {
+            (Rgba::new(v(Property::TintRed) / 255.0, v(Property::TintGreen) / 255.0, v(Property::TintBlue) / 255.0, 1.0), v(Property::Tint) / 100.0)
+        });
         let adv = on(ColorStyle::Advanced).then(|| {
             let [rm, gm, bm, am, ro, go, bo, ao] = Property::ADVANCED.map(v);
             ColorTransform { mul: [rm, gm, bm, am].map(|m| m / 100.0), add: [ro, go, bo, ao].map(|a| a / 255.0) }
@@ -398,7 +422,9 @@ impl Track {
     }
 
     fn is_sane(&self) -> bool {
-        self.keys.len() <= MAX_KEYS && self.keys.windows(2).all(|w| matches!(w, [a, b] if a.frame < b.frame)) && self.keys.iter().all(|k| self.property.range().contains(&k.value))
+        self.keys.len() <= MAX_KEYS
+            && self.keys.windows(2).all(|w| matches!(w, [a, b] if a.frame < b.frame))
+            && self.keys.iter().all(|k| self.property.range().contains(&k.value))
     }
 }
 
@@ -627,7 +653,8 @@ impl MotionTween {
     pub fn on_path(&self, base: &Props) -> Option<OnPath<'_>> {
         let walk = CurveWalk::new(self.path.as_ref()?)?;
         let pins = self.live_pins();
-        let mut frames: Vec<u32> = [Property::X, Property::Y].into_iter().filter_map(|p| self.track(p)).flat_map(|t| t.keys.iter().map(|k| k.frame)).collect();
+        let mut frames: Vec<u32> =
+            [Property::X, Property::Y].into_iter().filter_map(|p| self.track(p)).flat_map(|t| t.keys.iter().map(|k| k.frame)).collect();
         // A pin's frame holds X/Y keys (commands see to it); a leg ends there all the same.
         frames.extend(pins.iter().map(|p| p.frame));
         frames.sort_unstable();
@@ -673,7 +700,8 @@ impl MotionTween {
     /// [`MotionTween::path_from_tracks`] with the position keys between the ends pinned to the
     /// anchors they made (the first key at a place, where the object holds still a while).
     pub fn path_and_pins_from_tracks(&self, base: &Props) -> Option<(Path, Vec<Pin>)> {
-        let mut frames: Vec<u32> = [Property::X, Property::Y].into_iter().filter_map(|p| self.track(p)).flat_map(|t| t.keys.iter().map(|k| k.frame)).collect();
+        let mut frames: Vec<u32> =
+            [Property::X, Property::Y].into_iter().filter_map(|p| self.track(p)).flat_map(|t| t.keys.iter().map(|k| k.frame)).collect();
         frames.sort_unstable();
         frames.dedup();
         let mut pts: Vec<Vec2> = Vec::new();
@@ -756,7 +784,8 @@ impl MotionTween {
         };
         for (prop, v0, v1) in [(Property::X, a.x, b.x), (Property::Y, a.y, b.y)] {
             // Ends already in place keep their keys exactly (bending the path keeps its timing).
-            let holds = |m: &MotionTween, f: u32, v: f32| m.track(prop).and_then(|t| t.key_at(f).and_then(|i| t.keys.get(i))).is_some_and(|k| k.value == v);
+            let holds =
+                |m: &MotionTween, f: u32, v: f32| m.track(prop).and_then(|t| t.key_at(f).and_then(|i| t.keys.get(i))).is_some_and(|k| k.value == v);
             if !holds(self, f0, v0) {
                 self.set_key(prop, f0, v0, base.get(prop));
             }
@@ -961,7 +990,9 @@ impl MotionTween {
             None => None,
         };
         let shift = |p: Property| if p == Property::X { d.x } else { d.y };
-        let fits = [Property::X, Property::Y].into_iter().all(|p| self.track(p).is_none_or(|t| t.keys.iter().all(|k| p.range().contains(&(k.value + shift(p))))));
+        let fits = [Property::X, Property::Y]
+            .into_iter()
+            .all(|p| self.track(p).is_none_or(|t| t.keys.iter().all(|k| p.range().contains(&(k.value + shift(p))))));
         if !fits {
             return false;
         }
@@ -1126,7 +1157,12 @@ impl MotionTween {
             // pins after the cut stay on their anchors (the cut segment's end is anchor 1).
             Some(p) => {
                 let (cmd, _) = op.walk().locate(op.distance(f));
-                tail.pins = self.live_pins().into_iter().filter(|q| q.frame > frame && q.anchor as usize >= cmd).map(|q| Pin { frame: q.frame - frame, anchor: q.anchor + 1 - cmd as u32 }).collect();
+                tail.pins = self
+                    .live_pins()
+                    .into_iter()
+                    .filter(|q| q.frame > frame && q.anchor as usize >= cmd)
+                    .map(|q| Pin { frame: q.frame - frame, anchor: q.anchor + 1 - cmd as u32 })
+                    .collect();
                 tail.path = Some(p);
             }
             // Past the path's end: the object holds where the path ended.
@@ -1154,7 +1190,8 @@ impl MotionTween {
     pub fn is_sane(&self) -> bool {
         self.path.as_ref().is_none_or(|p| motion_path(p).as_ref() == Some(p))
             && self.pins == self.live_pins()
-            && self.tracks.iter().all(|t| !t.keys.is_empty() && t.is_sane()) && self.tracks.windows(2).all(|w| matches!(w, [a, b] if a.property.index() < b.property.index()))
+            && self.tracks.iter().all(|t| !t.keys.is_empty() && t.is_sane())
+            && self.tracks.windows(2).all(|w| matches!(w, [a, b] if a.property.index() < b.property.index()))
     }
 
     /// Repairs a loaded tween.
@@ -1299,7 +1336,10 @@ mod tests {
         let mut m = MotionTween {
             target: ElementId(1),
             tracks: vec![
-                track(Property::Alpha, &[(5, 500.0, Easing::Linear), (1, f32::NAN, Easing::Linear), (2, 10.0, Easing::Linear), (2, 20.0, Easing::Linear)]),
+                track(
+                    Property::Alpha,
+                    &[(5, 500.0, Easing::Linear), (1, f32::NAN, Easing::Linear), (2, 10.0, Easing::Linear), (2, 20.0, Easing::Linear)],
+                ),
                 track(Property::X, &[(0, 1.0, Easing::Linear)]),
                 track(Property::X, &[(0, 2.0, Easing::Linear)]),
                 track(Property::Y, &[]),
@@ -1310,14 +1350,21 @@ mod tests {
         m.sanitize();
         assert!(m.is_sane());
         assert_eq!(m.tracks.iter().map(|t| t.property).collect::<Vec<_>>(), vec![Property::X, Property::Alpha]);
-        assert_eq!(m.track(Property::Alpha).map(|t| t.keys.iter().map(|k| (k.frame, k.value)).collect::<Vec<_>>()), Some(vec![(2, 10.0), (5, 100.0)]));
+        assert_eq!(
+            m.track(Property::Alpha).map(|t| t.keys.iter().map(|k| (k.frame, k.value)).collect::<Vec<_>>()),
+            Some(vec![(2, 10.0), (5, 100.0)])
+        );
     }
 
     #[test]
     fn property_keys_round_trip() {
         for p in Property::ALL {
             assert_eq!(Property::from_key(p.key()), Some(p));
-            assert!(!p.label().is_empty() && (!p.unit().is_empty() || p.range() == (0.0..=255.0) || p.range() == (-255.0..=255.0)) && !p.group().is_empty());
+            assert!(
+                !p.label().is_empty()
+                    && (!p.unit().is_empty() || p.range() == (0.0..=255.0) || p.range() == (-255.0..=255.0))
+                    && !p.group().is_empty()
+            );
         }
         assert_eq!(Property::from_key("Scale X"), Some(Property::ScaleX));
         assert_eq!(Property::from_key("nope"), None);
@@ -1347,7 +1394,10 @@ mod tests {
     /// X 0 → 100 and Y 0 → 100 over frames 0..20 with `ease` on both.
     fn diagonal(ease: Easing) -> MotionTween {
         let mut m = MotionTween::new(ElementId(1));
-        m.tracks = vec![track(Property::X, &[(0, 0.0, ease), (20, 100.0, Easing::Linear)]), track(Property::Y, &[(0, 0.0, ease), (20, 100.0, Easing::Linear)])];
+        m.tracks = vec![
+            track(Property::X, &[(0, 0.0, ease), (20, 100.0, Easing::Linear)]),
+            track(Property::Y, &[(0, 0.0, ease), (20, 100.0, Easing::Linear)]),
+        ];
         m
     }
 
@@ -1471,7 +1521,10 @@ mod tests {
         // Right 100 over 10 frames, then down 100 over the next 10.
         let base = el(1, 0.0, 0.0);
         let mut plain = MotionTween::new(ElementId(1));
-        plain.tracks = vec![track(Property::X, &[(0, 0.0, Easing::Linear), (10, 100.0, Easing::Linear)]), track(Property::Y, &[(0, 0.0, Easing::Linear), (10, 0.0, Easing::Linear), (20, 100.0, Easing::Linear)])];
+        plain.tracks = vec![
+            track(Property::X, &[(0, 0.0, Easing::Linear), (10, 100.0, Easing::Linear)]),
+            track(Property::Y, &[(0, 0.0, Easing::Linear), (10, 0.0, Easing::Linear), (20, 100.0, Easing::Linear)]),
+        ];
         let path = plain.path_from_tracks(&Props::of(&base)).unwrap();
         assert_eq!(path.anchors().len(), 3);
         let mut m = plain.clone();
@@ -1502,7 +1555,12 @@ mod tests {
     #[test]
     fn motion_paths_are_normalised_and_hostile_ones_dropped() {
         let mut p = Path::new();
-        p.move_to(Vec2::new(9.0, 9.0)).move_to(Vec2::new(0.0, 0.0)).quad_to(Vec2::new(10.0, 10.0), Vec2::new(20.0, 0.0)).line_to(Vec2::new(30.0, 0.0)).move_to(Vec2::new(99.0, 99.0)).line_to(Vec2::new(0.0, 0.0));
+        p.move_to(Vec2::new(9.0, 9.0))
+            .move_to(Vec2::new(0.0, 0.0))
+            .quad_to(Vec2::new(10.0, 10.0), Vec2::new(20.0, 0.0))
+            .line_to(Vec2::new(30.0, 0.0))
+            .move_to(Vec2::new(99.0, 99.0))
+            .line_to(Vec2::new(0.0, 0.0));
         let n = motion_path(&p).unwrap();
         assert_eq!(n.cmds.len(), 3, "the first subpath, as a move and cubics");
         assert!(n.cmds.iter().skip(1).all(|c| matches!(c, PathCmd::CubicTo(..))));
@@ -1538,7 +1596,11 @@ mod tests {
     /// An S through three anchors: (0, 0), (100, 0) and (200, 0), over a hump and under a dip.
     fn s_path() -> Path {
         let mut p = Path::new();
-        p.move_to(Vec2::new(0.0, 0.0)).cubic_to(Vec2::new(40.0, -60.0), Vec2::new(60.0, -60.0), Vec2::new(100.0, 0.0)).cubic_to(Vec2::new(140.0, 60.0), Vec2::new(160.0, 60.0), Vec2::new(200.0, 0.0));
+        p.move_to(Vec2::new(0.0, 0.0)).cubic_to(Vec2::new(40.0, -60.0), Vec2::new(60.0, -60.0), Vec2::new(100.0, 0.0)).cubic_to(
+            Vec2::new(140.0, 60.0),
+            Vec2::new(160.0, 60.0),
+            Vec2::new(200.0, 0.0),
+        );
         p
     }
 
@@ -1546,7 +1608,10 @@ mod tests {
     fn along_s(ease: Easing) -> (MotionTween, Element) {
         let base = el(1, 0.0, 0.0);
         let mut m = MotionTween::new(ElementId(1));
-        m.tracks = vec![track(Property::X, &[(0, 0.0, ease), (20, 200.0, Easing::Linear)]), track(Property::Y, &[(0, 0.0, Easing::Linear), (20, 0.0, Easing::Linear)])];
+        m.tracks = vec![
+            track(Property::X, &[(0, 0.0, ease), (20, 200.0, Easing::Linear)]),
+            track(Property::Y, &[(0, 0.0, Easing::Linear), (20, 0.0, Easing::Linear)]),
+        ];
         assert!(m.set_path(&s_path(), &Props::of(&base), 20));
         (m, base)
     }
@@ -1655,7 +1720,8 @@ mod tests {
     /// ADR 0030's timing as it was before pins: what files without pins must still give.
     fn legacy_point(m: &MotionTween, base: &Props, frame: f32) -> Vec2 {
         let walk = CurveWalk::new(m.path.as_ref().unwrap()).unwrap();
-        let mut frames: Vec<u32> = [Property::X, Property::Y].into_iter().filter_map(|p| m.track(p)).flat_map(|t| t.keys.iter().map(|k| k.frame)).collect();
+        let mut frames: Vec<u32> =
+            [Property::X, Property::Y].into_iter().filter_map(|p| m.track(p)).flat_map(|t| t.keys.iter().map(|k| k.frame)).collect();
         frames.sort_unstable();
         frames.dedup();
         let keys: Vec<(f32, Vec2)> = frames.into_iter().map(|f| (f as f32, m.trace_at(base, f as f32))).collect();
@@ -1736,10 +1802,17 @@ mod tests {
         let base = el(1, 0.0, 0.0);
         let props = Props::of(&base);
         let mut m = MotionTween::new(ElementId(1));
-        m.tracks = vec![track(Property::X, &[(0, 0.0, Easing::Linear), (10, 100.0, Easing::Linear)]), track(Property::Y, &[(0, 0.0, Easing::Linear), (10, 0.0, Easing::Linear), (20, 100.0, Easing::Linear)])];
+        m.tracks = vec![
+            track(Property::X, &[(0, 0.0, Easing::Linear), (10, 100.0, Easing::Linear)]),
+            track(Property::Y, &[(0, 0.0, Easing::Linear), (10, 0.0, Easing::Linear), (20, 100.0, Easing::Linear)]),
+        ];
         let (mut path, pins) = m.path_and_pins_from_tracks(&props).unwrap();
         assert_eq!(pins, vec![Pin { frame: 10, anchor: 1 }]);
-        assert_eq!(m.pinned_anchors(&props), vec![Pin { frame: 0, anchor: 0 }, Pin { frame: 10, anchor: 1 }, Pin { frame: 20, anchor: 2 }], "shown pinned before it is a path");
+        assert_eq!(
+            m.pinned_anchors(&props),
+            vec![Pin { frame: 0, anchor: 0 }, Pin { frame: 10, anchor: 1 }, Pin { frame: 20, anchor: 2 }],
+            "shown pinned before it is a path"
+        );
         // Dragging the corner up edits that path: the corner stays pinned to frame 10.
         assert!(path.move_anchor(1, Vec2::new(0.0, -40.0)));
         assert!(m.set_path(&path, &props, 20));
@@ -1788,7 +1861,13 @@ mod tests {
     #[test]
     fn loading_drops_pins_that_cannot_hold() {
         let (mut m, _) = along_s(Easing::Linear);
-        m.pins = vec![Pin { frame: 5, anchor: 9 }, Pin { frame: 3, anchor: 1 }, Pin { frame: 3, anchor: 1 }, Pin { frame: 25, anchor: 1 }, Pin { frame: 0, anchor: 1 }];
+        m.pins = vec![
+            Pin { frame: 5, anchor: 9 },
+            Pin { frame: 3, anchor: 1 },
+            Pin { frame: 3, anchor: 1 },
+            Pin { frame: 25, anchor: 1 },
+            Pin { frame: 0, anchor: 1 },
+        ];
         assert!(!m.is_sane());
         m.sanitize();
         assert!(m.is_sane());

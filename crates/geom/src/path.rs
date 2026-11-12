@@ -231,11 +231,7 @@ impl Path {
     /// Axis-aligned rectangle, clockwise on a y-down screen.
     pub fn rect(x: f32, y: f32, w: f32, h: f32) -> Path {
         let mut p = Path::new();
-        p.move_to(Vec2::new(x, y))
-            .line_to(Vec2::new(x + w, y))
-            .line_to(Vec2::new(x + w, y + h))
-            .line_to(Vec2::new(x, y + h))
-            .close();
+        p.move_to(Vec2::new(x, y)).line_to(Vec2::new(x + w, y)).line_to(Vec2::new(x + w, y + h)).line_to(Vec2::new(x, y + h)).close();
         p
     }
 

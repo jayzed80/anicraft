@@ -15,11 +15,27 @@ use std::path::PathBuf;
 pub fn specs() -> Vec<CommandSpec> {
     let c = |id, label, menu, shortcut, params, mutates, run| CommandSpec { id, label, menu, shortcut, params, mutates, run };
     vec![
-        c("plugin.install", "Install Plug-in…", "Commands", None, "{path: a .wasm plug-in, confirm? (when it replaces an installed plug-in's file)} validates and installs it; with a plug-ins folder it is copied there", false, install as crate::RunFn),
+        c(
+            "plugin.install",
+            "Install Plug-in…",
+            "Commands",
+            None,
+            "{path: a .wasm plug-in, confirm? (when it replaces an installed plug-in's file)} validates and installs it; with a plug-ins folder it is copied there",
+            false,
+            install as crate::RunFn,
+        ),
         c("plugin.list", "Manage Plug-ins…", "Commands", None, "{} lists the installed plug-ins (the app shows them in a window)", false, list),
         c("plugin.run", "Run Plug-in", "", None, "{id, params?: {…} (see plugin.list; missing ones take their defaults)} one undo step", true, run),
         c("plugin.remove", "Remove Plug-in", "", None, "{id, confirm? (when it deletes the plug-in's file from the plug-ins folder)}", false, remove),
-        c("plugin.reload", "Reload Plug-ins", "Commands", None, "{folder? (makes it the plug-ins folder first)} re-reads every .wasm in the plug-ins folder", false, reload),
+        c(
+            "plugin.reload",
+            "Reload Plug-ins",
+            "Commands",
+            None,
+            "{folder? (makes it the plug-ins folder first)} re-reads every .wasm in the plug-ins folder",
+            false,
+            reload,
+        ),
     ]
 }
 
@@ -31,12 +47,22 @@ const MAX_ELEMENTS: usize = 10_000;
 /// a namespace this list doesn't know is refused until someone decides (a test checks that
 /// every registered namespace is known).
 pub fn plugin_may_call(id: &str) -> std::result::Result<(), &'static str> {
-    const DOCUMENT: &[&str] = &["draw", "edit", "element", "symbol", "arrange", "modify", "library", "text", "scene", "path", "paint", "timeline", "layer", "align", "doc", "motion", "sound", "stroke", "tween", "actions", "instance", "camera", "bone", "script", "raw", "frames", "find", "explorer"];
+    const DOCUMENT: &[&str] = &[
+        "draw", "edit", "element", "symbol", "arrange", "modify", "library", "text", "scene", "path", "paint", "timeline", "layer", "align", "doc",
+        "motion", "sound", "stroke", "tween", "actions", "instance", "camera", "bone", "script", "raw", "frames", "find", "explorer",
+    ];
     match id {
         "edit.undo" | "edit.redo" => Err("a plug-in run is one undo step; it can't undo or redo"),
-        "edit.cut" | "edit.copy" | "edit.paste" | "edit.paste_in_place" | "timeline.cut_frames" | "timeline.copy_frames" | "timeline.paste_frames" | "frames.cut" | "frames.copy" | "frames.paste" => {
-            Err("plug-ins don't use your clipboard")
-        }
+        "edit.cut"
+        | "edit.copy"
+        | "edit.paste"
+        | "edit.paste_in_place"
+        | "timeline.cut_frames"
+        | "timeline.copy_frames"
+        | "timeline.paste_frames"
+        | "frames.cut"
+        | "frames.copy"
+        | "frames.paste" => Err("plug-ins don't use your clipboard"),
         _ => match id.split('.').next().unwrap_or("") {
             "file" => Err("plug-ins can't open, save, import, export or publish files"),
             // Reading the settings is harmless; changing them changes what Publish writes where.
@@ -64,7 +90,10 @@ impl Host for SessionHost<'_> {
     fn request(&mut self, op: &str, req: &Value) -> std::result::Result<Value, String> {
         match op {
             "command" => {
-                let id = req.get("id").and_then(Value::as_str).ok_or("a command request needs an \"id\", e.g. {\"op\":\"command\",\"id\":\"draw.rect\",\"params\":{…}}")?;
+                let id = req
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .ok_or("a command request needs an \"id\", e.g. {\"op\":\"command\",\"id\":\"draw.rect\",\"params\":{…}}")?;
                 if crate::find_command(id).is_none() {
                     return Err(format!("unknown command '{id}'"));
                 }
@@ -230,7 +259,9 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
     let report = plugin.run(&mut SessionHost { s }, &params).map_err(plugin_err)?;
     // The undo step is named after the plug-in ("Undo Star Field").
     s.step_label = Some(m.name.clone());
-    Ok(json!({"plugin": m.id, "name": m.name, "params": params, "log": report.log, "log_dropped": report.log_dropped, "calls": report.calls, "fuel": report.fuel}))
+    Ok(
+        json!({"plugin": m.id, "name": m.name, "params": params, "log": report.log, "log_dropped": report.log_dropped, "calls": report.calls, "fuel": report.fuel}),
+    )
 }
 
 fn remove(s: &mut Session, p: &Value) -> Result<Value> {

@@ -13,7 +13,9 @@
 use crate::history::StateId;
 use crate::params::*;
 use crate::{CommandSpec, EngineError, Result, Selection, Session};
-use anicraft_doc::{ColorEffect, Document, Element, ElementId, ElementKind, Keyframe, Layer, LayerId, LayerKind, LoopMode, Symbol, SymbolId, SymbolKind, Timeline};
+use anicraft_doc::{
+    ColorEffect, Document, Element, ElementId, ElementKind, Keyframe, Layer, LayerId, LayerKind, LoopMode, Symbol, SymbolId, SymbolKind, Timeline,
+};
 use anicraft_geom::{Affine, Vec2};
 use serde_json::{Value, json};
 use std::hash::{Hash, Hasher};
@@ -31,7 +33,15 @@ pub fn specs() -> Vec<CommandSpec> {
             false,
             edit as crate::RunFn,
         ),
-        c("symbol.exit", "Edit Document", "Edit", None, "{all?: bool} closes the open symbol (default: one level; all: back to the scene), selecting the instance it was opened from", false, exit),
+        c(
+            "symbol.exit",
+            "Edit Document",
+            "Edit",
+            None,
+            "{all?: bool} closes the open symbol (default: one level; all: back to the scene), selecting the instance it was opened from",
+            false,
+            exit,
+        ),
     ]
 }
 
@@ -140,7 +150,14 @@ impl Session {
     }
 
     fn enter_level(&mut self, symbol: SymbolId, instance: Option<(LayerId, ElementId)>, transform: Affine, frame: u32) {
-        self.editing.push(EditLevel { symbol, instance, transform, layer: self.layer, frame: self.frame, selection: std::mem::take(&mut self.selection) });
+        self.editing.push(EditLevel {
+            symbol,
+            instance,
+            transform,
+            layer: self.layer,
+            frame: self.frame,
+            selection: std::mem::take(&mut self.selection),
+        });
         // The top layer inside, at the frame the instance shows.
         self.layer = self.timeline().layers.first().map_or(LayerId(0), |l| l.id);
         self.frame = frame.min(self.timeline().frame_count().saturating_sub(1));
@@ -184,7 +201,12 @@ impl Session {
     /// timeline at its playhead where its instance stands, over the timelines it sits in dimmed.
     pub fn stage_picture(&self) -> Arc<StagePicture> {
         let Some(view) = self.edit_view() else {
-            return Arc::new(StagePicture { doc: self.doc.clone(), frame: self.doc.scene_start(self.scene).saturating_add(self.frame), state: self.state, front: None });
+            return Arc::new(StagePicture {
+                doc: self.doc.clone(),
+                frame: self.doc.scene_start(self.scene).saturating_add(self.frame),
+                state: self.state,
+                front: None,
+            });
         };
         let mut h = std::collections::hash_map::DefaultHasher::new();
         (self.state, self.scene, self.frame).hash(&mut h);
@@ -281,14 +303,29 @@ fn hit_timeline(tl: &Timeline) -> Timeline {
 /// with colour effect `color` (a symbol added to `doc`, which is only drawn).
 fn placed(doc: &mut Document, timeline: Timeline, transform: Affine, frame: u32, color: ColorEffect) -> Arc<Layer> {
     let symbol = SymbolId(doc.alloc_id());
-    doc.library.push(Arc::new(Symbol { id: symbol, name: String::new(), kind: SymbolKind::Graphic, linkage: None, scale_grid_kept: None, scale_grid: None, timeline }));
+    doc.library.push(Arc::new(Symbol {
+        id: symbol,
+        name: String::new(),
+        kind: SymbolKind::Graphic,
+        linkage: None,
+        scale_grid_kept: None,
+        scale_grid: None,
+        timeline,
+    }));
     let mut k = Keyframe::new(0, 1);
     k.elements.push(Arc::new(Element {
         id: ElementId(doc.alloc_id()),
         name: String::new(),
         transform,
         color,
-        kind: ElementKind::Symbol { symbol, loop_mode: LoopMode::SingleFrame, first_frame: frame, blend: Default::default(), filters: Vec::new(), events: Vec::new() },
+        kind: ElementKind::Symbol {
+            symbol,
+            loop_mode: LoopMode::SingleFrame,
+            first_frame: frame,
+            blend: Default::default(),
+            filters: Vec::new(),
+            events: Vec::new(),
+        },
     }));
     let mut layer = Layer::new(LayerId(doc.alloc_id()), "");
     layer.keyframes.push(Arc::new(k));
@@ -360,7 +397,12 @@ pub(crate) fn edit(s: &mut Session, p: &Value) -> Result<Value> {
     let id = match opt_u64(p, "id")? {
         Some(i) => ElementId(i),
         None => {
-            let picked: Vec<ElementId> = s.selection.on(s.layer).into_iter().filter(|id| instance(s, *id).is_some_and(|(_, e)| matches!(e.kind, ElementKind::Symbol { .. }))).collect();
+            let picked: Vec<ElementId> = s
+                .selection
+                .on(s.layer)
+                .into_iter()
+                .filter(|id| instance(s, *id).is_some_and(|(_, e)| matches!(e.kind, ElementKind::Symbol { .. })))
+                .collect();
             match picked.as_slice() {
                 [one] => *one,
                 // Nothing to open: Ctrl+E goes back to the document, as in Animate.
@@ -377,7 +419,9 @@ pub(crate) fn edit(s: &mut Session, p: &Value) -> Result<Value> {
     if !s.selectable(layer) {
         return Err(EngineError::State("that instance's layer is locked or hidden".into()));
     }
-    let ElementKind::Symbol { symbol, loop_mode, first_frame, .. } = el.kind else { return Err(EngineError::State("that is not a symbol instance".into())) };
+    let ElementKind::Symbol { symbol, loop_mode, first_frame, .. } = el.kind else {
+        return Err(EngineError::State("that is not a symbol instance".into()));
+    };
     let sym = s.doc.symbol(symbol).ok_or_else(|| EngineError::State("that instance's symbol is missing from the Library".into()))?;
     if s.editing.iter().any(|l| l.symbol == symbol) {
         return Err(EngineError::State("that symbol is open already".into()));
@@ -405,7 +449,11 @@ fn exit(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// The open symbols, outermost first.
 pub(crate) fn editing_json(s: &Session) -> Value {
-    let list: Vec<Value> = s.editing.iter().map(|l| json!({"symbol": l.symbol.0, "name": s.doc.symbol(l.symbol).map(|x| x.name.clone()), "instance": l.instance.map(|(_, e)| e.0)})).collect();
+    let list: Vec<Value> = s
+        .editing
+        .iter()
+        .map(|l| json!({"symbol": l.symbol.0, "name": s.doc.symbol(l.symbol).map(|x| x.name.clone()), "instance": l.instance.map(|(_, e)| e.0)}))
+        .collect();
     json!({"editing": list, "layer": s.layer.0, "frame": s.frame, "selected": s.selection.id_list()})
 }
 

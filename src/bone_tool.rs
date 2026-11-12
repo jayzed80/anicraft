@@ -45,7 +45,12 @@ pub fn shown(app: &App) -> Vec<Shown> {
             let arm = l.armature.as_deref()?;
             let (_, els) = evaluate_layer_elements(l, app.s.frame)?;
             let pose = armature::pose_at(l, app.s.frame).unwrap_or_default();
-            Some(Shown { layer: l.id, color: to_color32(l.color), locked: l.locked || tl.locked_by_folder(l.id), bones: armature::bones_at(arm, &els, &pose) })
+            Some(Shown {
+                layer: l.id,
+                color: to_color32(l.color),
+                locked: l.locked || tl.locked_by_folder(l.id),
+                bones: armature::bones_at(arm, &els, &pose),
+            })
         })
         .collect()
 }
@@ -99,7 +104,8 @@ fn instance_at(app: &App, sp: Vec2, slop: f32, skip: Option<ElementId>) -> Optio
         if !(inside || item.path.distance_to_edge(sp, &item.transform) <= hw + slop) {
             continue;
         }
-        let is_instance = evaluate_layer_elements(layer, app.s.frame).is_some_and(|(_, els)| els.iter().any(|e| e.id == item.element && matches!(e.kind, ElementKind::Symbol { .. })));
+        let is_instance = evaluate_layer_elements(layer, app.s.frame)
+            .is_some_and(|(_, els)| els.iter().any(|e| e.id == item.element && matches!(e.kind, ElementKind::Symbol { .. })));
         if is_instance {
             return Some((layer.id, item.element));
         }
@@ -167,7 +173,8 @@ pub fn select_drag_start(app: &mut App, xf: Xf, press: Pos2) -> Option<Drag> {
     let (layer, bone, local) = match hit(app, xf, press) {
         Some((layer, id, _)) => (layer, Some(id), None),
         None => {
-            let (layer, el) = instance_at(app, sp, 3.0 / xf.zoom.max(1e-3), None).filter(|(l, _)| tl.layer(*l).is_some_and(|l| l.kind == LayerKind::Armature))?;
+            let (layer, el) =
+                instance_at(app, sp, 3.0 / xf.zoom.max(1e-3), None).filter(|(l, _)| tl.layer(*l).is_some_and(|l| l.kind == LayerKind::Armature))?;
             let l = tl.layer(layer)?;
             let into = l.armature.as_ref().and_then(|a| a.bone_into(el)).map(|b| b.id);
             // The point grabbed, in the instance's own space: it follows the pointer.

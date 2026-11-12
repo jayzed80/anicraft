@@ -85,83 +85,93 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
     };
     let fixed = matches!(kind, LayerKind::Folder | LayerKind::Camera | LayerKind::Armature);
     let (mut submit, mut cancel) = (false, false);
-    egui::Window::new(tr!("Layer Properties")).id(egui::Id::new("layer_props")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, -80.0]).show(ctx, |ui| {
-        ui.set_min_width(420.0);
-        form_row(ui, FORM_LABEL_DIALOG, tr!("Name"), |ui| {
-            let r = ui.add(egui::TextEdit::singleline(&mut d.name).desired_width(f32::INFINITY)).named(tr!("Layer name"));
-            if d.focus {
-                r.request_focus();
-                d.focus = false;
-            }
-            if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                submit = true;
-            }
-        });
-        form_row(ui, FORM_LABEL_DIALOG, tr!("Layer"), |ui| {
-            crate::theme::checkbox(ui, &mut d.visible, tr!("Show"));
-            crate::theme::checkbox(ui, &mut d.locked, tr!("Lock"));
-        });
-        form_row(ui, FORM_LABEL_DIALOG, tr!("Type"), |ui| {
-            if fixed {
-                ui.label(text(Type::Body, type_label(&d.ty)));
-                return;
-            }
-            ui.vertical(|ui| {
-                for (k, name) in types() {
-                    let allowed = match k {
-                        "masked" => can_mask || d.ty == k,
-                        "guided" => can_guide || d.ty == k,
-                        _ => true,
-                    };
-                    let r = ui.add_enabled(allowed, egui::RadioButton::new(d.ty == k, name));
-                    let r = if allowed {
-                        r
-                    } else if k == "masked" {
-                        r.on_disabled_hover_text(tr!("Only a layer right under a mask layer can be masked"))
-                    } else {
-                        r.on_disabled_hover_text(tr!("Only a layer right under a motion guide can be guided"))
-                    };
-                    if r.clicked() {
-                        d.ty = k.to_string();
+    egui::Window::new(tr!("Layer Properties"))
+        .id(egui::Id::new("layer_props"))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, -80.0])
+        .show(ctx, |ui| {
+            ui.set_min_width(420.0);
+            form_row(ui, FORM_LABEL_DIALOG, tr!("Name"), |ui| {
+                let r = ui.add(egui::TextEdit::singleline(&mut d.name).desired_width(f32::INFINITY)).named(tr!("Layer name"));
+                if d.focus {
+                    r.request_focus();
+                    d.focus = false;
+                }
+                if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                    submit = true;
+                }
+            });
+            form_row(ui, FORM_LABEL_DIALOG, tr!("Layer"), |ui| {
+                crate::theme::checkbox(ui, &mut d.visible, tr!("Show"));
+                crate::theme::checkbox(ui, &mut d.locked, tr!("Lock"));
+            });
+            form_row(ui, FORM_LABEL_DIALOG, tr!("Type"), |ui| {
+                if fixed {
+                    ui.label(text(Type::Body, type_label(&d.ty)));
+                    return;
+                }
+                ui.vertical(|ui| {
+                    for (k, name) in types() {
+                        let allowed = match k {
+                            "masked" => can_mask || d.ty == k,
+                            "guided" => can_guide || d.ty == k,
+                            _ => true,
+                        };
+                        let r = ui.add_enabled(allowed, egui::RadioButton::new(d.ty == k, name));
+                        let r = if allowed {
+                            r
+                        } else if k == "masked" {
+                            r.on_disabled_hover_text(tr!("Only a layer right under a mask layer can be masked"))
+                        } else {
+                            r.on_disabled_hover_text(tr!("Only a layer right under a motion guide can be guided"))
+                        };
+                        if r.clicked() {
+                            d.ty = k.to_string();
+                        }
                     }
+                });
+            });
+            form_row(ui, FORM_LABEL_DIALOG, tr!("Outline colour"), |ui| {
+                ui.color_edit_button_srgb(&mut d.color)
+                    .named(tr!("Outline colour"))
+                    .on_hover_text(tr!("The colour of the layer's outlines and of its bar on the timeline"));
+            });
+            if kind != LayerKind::Camera && kind != LayerKind::Folder {
+                form_row(ui, FORM_LABEL_DIALOG, tr!("Outlines"), |ui| {
+                    crate::theme::checkbox(ui, &mut d.outline, tr!("View layer as outlines")).on_hover_text(tr!(
+                        "Draw the layer's artwork as outlines in its colour, on the stage only (never in the movie or an export)"
+                    ));
+                });
+                form_row(ui, FORM_LABEL_DIALOG, tr!("Onion skin"), |ui| {
+                    crate::theme::checkbox(ui, &mut d.onion, tr!("Onion skin this layer"))
+                        .on_hover_text(tr!("Show this layer's frames around the playhead while onion skin is on"));
+                });
+            }
+            form_row(ui, FORM_LABEL_DIALOG, tr!("Layer height"), |ui| {
+                egui::ComboBox::from_id_salt("layer_props_height")
+                    .width(96.0)
+                    .selected_text(text(Type::Data, format!("{} %", u32::from(d.height) * 100)))
+                    .show_ui(ui, |ui| {
+                        for h in 1..=MAX_LAYER_HEIGHT {
+                            if ui.selectable_label(d.height == h, text(Type::Data, format!("{} %", u32::from(h) * 100))).clicked() {
+                                d.height = h;
+                            }
+                        }
+                    })
+                    .response
+                    .set_name(tr!("Layer height"));
+            });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui.button(tr!("OK")).clicked() {
+                    submit = true;
+                }
+                if ui.button(tr!("Cancel")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                    cancel = true;
                 }
             });
         });
-        form_row(ui, FORM_LABEL_DIALOG, tr!("Outline colour"), |ui| {
-            ui.color_edit_button_srgb(&mut d.color).named(tr!("Outline colour")).on_hover_text(tr!("The colour of the layer's outlines and of its bar on the timeline"));
-        });
-        if kind != LayerKind::Camera && kind != LayerKind::Folder {
-            form_row(ui, FORM_LABEL_DIALOG, tr!("Outlines"), |ui| {
-                crate::theme::checkbox(ui, &mut d.outline, tr!("View layer as outlines")).on_hover_text(tr!("Draw the layer's artwork as outlines in its colour, on the stage only (never in the movie or an export)"));
-            });
-            form_row(ui, FORM_LABEL_DIALOG, tr!("Onion skin"), |ui| {
-                crate::theme::checkbox(ui, &mut d.onion, tr!("Onion skin this layer")).on_hover_text(tr!("Show this layer's frames around the playhead while onion skin is on"));
-            });
-        }
-        form_row(ui, FORM_LABEL_DIALOG, tr!("Layer height"), |ui| {
-            egui::ComboBox::from_id_salt("layer_props_height")
-                .width(96.0)
-                .selected_text(text(Type::Data, format!("{} %", u32::from(d.height) * 100)))
-                .show_ui(ui, |ui| {
-                    for h in 1..=MAX_LAYER_HEIGHT {
-                        if ui.selectable_label(d.height == h, text(Type::Data, format!("{} %", u32::from(h) * 100))).clicked() {
-                            d.height = h;
-                        }
-                    }
-                })
-                .response
-                .set_name(tr!("Layer height"));
-        });
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            if ui.button(tr!("OK")).clicked() {
-                submit = true;
-            }
-            if ui.button(tr!("Cancel")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
-                cancel = true;
-            }
-        });
-    });
     if submit {
         accept(app);
     } else if cancel {

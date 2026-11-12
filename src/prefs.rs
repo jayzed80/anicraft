@@ -30,8 +30,16 @@ pub enum RenderMode {
 impl RenderMode {
     pub const ALL: [(RenderMode, &'static str, &'static str); 3] = [
         (RenderMode::Auto, tr_noop!("Auto"), tr_noop!("Edits show immediately; heavy scenes render in the background with an outline preview.")),
-        (RenderMode::Immediate, tr_noop!("Immediate"), tr_noop!("Every edit renders before the next frame. Lowest latency; can stutter on very heavy scenes.")),
-        (RenderMode::Background, tr_noop!("Background"), tr_noop!("Always render off the UI thread. The window never waits; the picture can trail by a frame.")),
+        (
+            RenderMode::Immediate,
+            tr_noop!("Immediate"),
+            tr_noop!("Every edit renders before the next frame. Lowest latency; can stutter on very heavy scenes."),
+        ),
+        (
+            RenderMode::Background,
+            tr_noop!("Background"),
+            tr_noop!("Always render off the UI thread. The window never waits; the picture can trail by a frame."),
+        ),
     ];
 }
 
@@ -49,7 +57,11 @@ pub enum StageRenderer {
 
 impl StageRenderer {
     pub const ALL: [(StageRenderer, &'static str, &'static str); 2] = [
-        (StageRenderer::Gpu, tr_noop!("Graphics card (GPU)"), tr_noop!("Draws the stage on the graphics card, and on the CPU when there is no card that can. The picture is the same either way.")),
+        (
+            StageRenderer::Gpu,
+            tr_noop!("Graphics card (GPU)"),
+            tr_noop!("Draws the stage on the graphics card, and on the CPU when there is no card that can. The picture is the same either way."),
+        ),
         (StageRenderer::Cpu, tr_noop!("CPU (reference)"), tr_noop!("The reference renderer: slower on large stages. Exports always use it.")),
     ];
 }
@@ -147,7 +159,18 @@ pub const ONION_REACH_MAX: u32 = 999;
 
 impl Default for OnionPrefs {
     fn default() -> Self {
-        OnionPrefs { before: 2, after: 2, all: false, tint: true, fade: true, outlines: false, keyframes_only: false, always_markers: false, past: None, future: None }
+        OnionPrefs {
+            before: 2,
+            after: 2,
+            all: false,
+            tint: true,
+            fade: true,
+            outlines: false,
+            keyframes_only: false,
+            always_markers: false,
+            past: None,
+            future: None,
+        }
     }
 }
 
@@ -204,7 +227,13 @@ fn lenient_brushes<'de, D: serde::Deserializer<'de>>(d: D) -> Result<anicraft_en
 }
 
 /// Autosave intervals offered in Preferences: `(seconds, label)`.
-pub const AUTOSAVE_INTERVALS: [(u32, &str); 5] = [(30, tr_noop!("30 seconds")), (60, tr_noop!("1 minute")), (120, tr_noop!("2 minutes")), (300, tr_noop!("5 minutes")), (600, tr_noop!("10 minutes"))];
+pub const AUTOSAVE_INTERVALS: [(u32, &str); 5] = [
+    (30, tr_noop!("30 seconds")),
+    (60, tr_noop!("1 minute")),
+    (120, tr_noop!("2 minutes")),
+    (300, tr_noop!("5 minutes")),
+    (600, tr_noop!("10 minutes")),
+];
 pub const AUTOSAVE_SECS_RANGE: std::ops::RangeInclusive<u32> = 15..=600;
 pub const AUTOSAVE_EDITS_RANGE: std::ops::RangeInclusive<u32> = 0..=1000;
 
@@ -229,7 +258,8 @@ impl Prefs {
 
     pub fn sanitized(mut self) -> Prefs {
         self.ui_scale = if self.ui_scale.is_finite() { self.ui_scale.clamp(*SCALE_RANGE.start(), *SCALE_RANGE.end()) } else { 1.0 };
-        self.timeline_start_gap = if self.timeline_start_gap.is_finite() { self.timeline_start_gap.clamp(*GAP_RANGE.start(), *GAP_RANGE.end()) } else { 0.0 };
+        self.timeline_start_gap =
+            if self.timeline_start_gap.is_finite() { self.timeline_start_gap.clamp(*GAP_RANGE.start(), *GAP_RANGE.end()) } else { 0.0 };
         for f in [&mut self.ui_font, &mut self.data_font] {
             if let FontChoice::System(name) = f
                 && (name.trim().is_empty() || name.len() > 256)
@@ -239,7 +269,11 @@ impl Prefs {
         }
         // A locale code is short ASCII (`sr-latn`, `zh-hant`); anything else follows the system.
         let lang = self.language.trim().to_ascii_lowercase();
-        self.language = if lang.is_empty() || lang.len() > 35 || !lang.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') { crate::i18n::AUTO.to_string() } else { lang };
+        self.language = if lang.is_empty() || lang.len() > 35 || !lang.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+            crate::i18n::AUTO.to_string()
+        } else {
+            lang
+        };
         self.shortcuts = crate::keymap::sanitize(std::mem::take(&mut self.shortcuts));
         self.autosave_secs = self.autosave_secs.clamp(*AUTOSAVE_SECS_RANGE.start(), *AUTOSAVE_SECS_RANGE.end());
         self.autosave_edits = self.autosave_edits.min(*AUTOSAVE_EDITS_RANGE.end());
@@ -307,7 +341,12 @@ impl SystemFonts {
 
     /// Bytes and face index of the regular style of `family`.
     pub fn regular(&self, family: &str) -> Option<(Vec<u8>, u32)> {
-        let q = fontdb::Query { families: &[fontdb::Family::Name(family)], weight: fontdb::Weight::NORMAL, stretch: fontdb::Stretch::Normal, style: fontdb::Style::Normal };
+        let q = fontdb::Query {
+            families: &[fontdb::Family::Name(family)],
+            weight: fontdb::Weight::NORMAL,
+            stretch: fontdb::Stretch::Normal,
+            style: fontdb::Style::Normal,
+        };
         let id = self.db.query(&q)?;
         self.db.with_face_data(id, |data, index| (data.to_vec(), index))
     }
@@ -360,7 +399,10 @@ mod tests {
         p.publish_presets.insert("Web small".into(), gif.clone());
         let back = Prefs::from_json(&serde_json::to_string(&p).unwrap());
         assert_eq!(back.publish_presets.get("Web small"), Some(&gif));
-        let hostile = format!(r#"{{"publish_presets": {{"": {{}}, "{}": {{}}, "ok": {{"gif": {{"scale": 1e30}}, "audio": {{"bits": 3}}}}, "junk": 5}}}}"#, "n".repeat(100));
+        let hostile = format!(
+            r#"{{"publish_presets": {{"": {{}}, "{}": {{}}, "ok": {{"gif": {{"scale": 1e30}}, "audio": {{"bits": 3}}}}, "junk": 5}}}}"#,
+            "n".repeat(100)
+        );
         let p = Prefs::from_json(&hostile);
         assert!(p.publish_presets.is_empty() || p.publish_presets.len() == 1, "{:?}", p.publish_presets.keys());
         if let Some(ok) = p.publish_presets.get("ok") {
@@ -385,7 +427,11 @@ mod tests {
         assert_eq!(Prefs::from_json(r#"{"language": "<script>"}"#).language, "auto");
         assert_eq!(Prefs::from_json(&format!(r#"{{"language": "{}"}}"#, "a".repeat(100))).language, "auto");
         assert_eq!(p.stage_renderer, StageRenderer::Gpu, "the GPU draws the stage unless the CPU is chosen");
-        assert_eq!(Prefs::from_json(r#"{"stage_renderer": "Cpu"}"#).stage_renderer, StageRenderer::Gpu, "the old default, written by every earlier build, is not a choice");
+        assert_eq!(
+            Prefs::from_json(r#"{"stage_renderer": "Cpu"}"#).stage_renderer,
+            StageRenderer::Gpu,
+            "the old default, written by every earlier build, is not a choice"
+        );
         assert_eq!(Prefs::from_json(r#"{"stage": "Cpu"}"#).stage_renderer, StageRenderer::Cpu);
         let chosen = Prefs { stage_renderer: StageRenderer::Cpu, ..Prefs::default() };
         assert_eq!(Prefs::from_json(&serde_json::to_string(&chosen).unwrap()).stage_renderer, StageRenderer::Cpu, "a choice survives saving");
@@ -410,7 +456,9 @@ mod tests {
         // Your brushes (ADR 0068): none in older files; junk entries skipped, values clamped,
         // and they survive a save and load.
         assert!(Prefs::from_json(r#"{"ui_scale": 1.25}"#).brushes.is_empty());
-        let p = Prefs::from_json(r#"{"brushes": [{"name": "Soft", "size": 99999, "curve": "x"}, 3, {"name": "Ink", "jitter": 12}, {"name": ""}], "start_screen": false}"#);
+        let p = Prefs::from_json(
+            r#"{"brushes": [{"name": "Soft", "size": 99999, "curve": "x"}, 3, {"name": "Ink", "jitter": 12}, {"name": ""}], "start_screen": false}"#,
+        );
         let names: Vec<_> = p.brushes.user().iter().map(|b| (b.name.clone(), b.size)).collect();
         assert_eq!(names, [("Ink".to_string(), 10.0)], "a bad curve drops that brush, the rest stay");
         assert!(!p.start_screen);

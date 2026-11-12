@@ -146,9 +146,13 @@ impl WidthProfile {
         let l = anicraft_geom::lerp;
         match (a, b) {
             (None, None) => None,
-            (Some(x), Some(y)) if x.points.len() == y.points.len() => {
-                WidthProfile::new(x.points.iter().zip(y.points.iter()).map(|(p, q)| WidthPoint::new(l(p.t, q.t, t), l(p.left, q.left, t), l(p.right, q.right, t))).collect())
-            }
+            (Some(x), Some(y)) if x.points.len() == y.points.len() => WidthProfile::new(
+                x.points
+                    .iter()
+                    .zip(y.points.iter())
+                    .map(|(p, q)| WidthPoint::new(l(p.t, q.t, t), l(p.left, q.left, t), l(p.right, q.right, t)))
+                    .collect(),
+            ),
             _ => {
                 let at = |p: Option<&WidthProfile>, s: f32| p.map_or((1.0, 1.0), |p| p.at(s));
                 let mut ts: Vec<f32> = a.into_iter().chain(b).flat_map(|p| p.points.iter().map(|q| q.t)).collect();
@@ -225,7 +229,14 @@ pub enum ProfilePreset {
 }
 
 impl ProfilePreset {
-    pub const ALL: [ProfilePreset; 6] = [ProfilePreset::Uniform, ProfilePreset::TaperBoth, ProfilePreset::TaperStart, ProfilePreset::TaperEnd, ProfilePreset::Bulge, ProfilePreset::Pinch];
+    pub const ALL: [ProfilePreset; 6] = [
+        ProfilePreset::Uniform,
+        ProfilePreset::TaperBoth,
+        ProfilePreset::TaperStart,
+        ProfilePreset::TaperEnd,
+        ProfilePreset::Bulge,
+        ProfilePreset::Pinch,
+    ];
 
     /// The name used in commands (`taper_both`…).
     pub fn key(self) -> &'static str {
@@ -315,7 +326,12 @@ mod tests {
 
     #[test]
     fn profiles_are_sanitized_and_uniform_ones_dropped() {
-        let p = WidthProfile::from(vec![WidthPoint::new(0.9, 2.0, 2.0), WidthPoint::new(f32::NAN, 0.0, 0.0), WidthPoint::new(-3.0, -1.0, 99.0), WidthPoint::new(0.9002, 3.0, 3.0)]);
+        let p = WidthProfile::from(vec![
+            WidthPoint::new(0.9, 2.0, 2.0),
+            WidthPoint::new(f32::NAN, 0.0, 0.0),
+            WidthPoint::new(-3.0, -1.0, 99.0),
+            WidthPoint::new(0.9002, 3.0, 3.0),
+        ]);
         assert_eq!(p.points(), &[WidthPoint::new(0.0, 0.0, MAX_WIDTH_FACTOR), WidthPoint::new(0.9, 3.0, 3.0)]);
         assert!(WidthProfile::new(vec![WidthPoint::new(0.3, 1.0, 1.0)]).is_none(), "all nominal: uniform");
         assert!(WidthProfile::new(vec![]).is_none());

@@ -16,7 +16,9 @@ enum Mode {
     Idle,
     Playing,
     /// A short snippet while scrubbing, ending at `until`.
-    Snippet { until: u64 },
+    Snippet {
+        until: u64,
+    },
 }
 
 pub struct Player {
@@ -34,7 +36,16 @@ pub struct Player {
 impl Player {
     /// A silent player for output at `rate`.
     pub fn new(rate: u32) -> Player {
-        Player { voices: Arc::new(Vec::new()), rate: rate.max(1), mode: Mode::Idle, opts: MixOptions::default(), pos: 0, started: 0, stopping: None, scratch: Vec::new() }
+        Player {
+            voices: Arc::new(Vec::new()),
+            rate: rate.max(1),
+            mode: Mode::Idle,
+            opts: MixOptions::default(),
+            pos: 0,
+            started: 0,
+            stopping: None,
+            scratch: Vec::new(),
+        }
     }
 
     pub fn rate(&self) -> u32 {

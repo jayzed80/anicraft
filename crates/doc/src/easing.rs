@@ -35,9 +35,10 @@ impl Easing {
     pub fn label(&self) -> String {
         match self {
             Easing::Classic(s) => format!("Classic {s:+.0}"),
-            Easing::CubicBezier(a, b, c, d) => {
-                Easing::PRESETS.iter().find(|(_, e)| e == self).map_or_else(|| format!("Bezier({a:.2}, {b:.2}, {c:.2}, {d:.2})"), |(n, _)| (*n).to_string())
-            }
+            Easing::CubicBezier(a, b, c, d) => Easing::PRESETS
+                .iter()
+                .find(|(_, e)| e == self)
+                .map_or_else(|| format!("Bezier({a:.2}, {b:.2}, {c:.2}, {d:.2})"), |(n, _)| (*n).to_string()),
             other => Easing::PRESETS.iter().find(|(_, e)| e == other).map_or("Custom", |(n, _)| n).to_string(),
         }
     }
@@ -195,7 +196,16 @@ mod tests {
     #[test]
     fn bezier_forms_draw_the_same_curves() {
         // Exact for everything but the two in-out polynomials.
-        for e in [Easing::Linear, Easing::QuadIn, Easing::QuadOut, Easing::CubicIn, Easing::CubicOut, Easing::Classic(-60.0), Easing::Classic(100.0), Easing::CubicBezier(0.2, 1.4, 0.6, -0.3)] {
+        for e in [
+            Easing::Linear,
+            Easing::QuadIn,
+            Easing::QuadOut,
+            Easing::CubicIn,
+            Easing::CubicOut,
+            Easing::Classic(-60.0),
+            Easing::Classic(100.0),
+            Easing::CubicBezier(0.2, 1.4, 0.6, -0.3),
+        ] {
             let (a, b, c, d) = e.as_bezier();
             let bez = Easing::CubicBezier(a, b, c, d);
             for i in 0..=20 {

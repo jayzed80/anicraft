@@ -239,7 +239,16 @@ pub fn onion_frames(tl: &Timeline, playhead: u32, skin: &OnionSkin) -> Vec<Extra
             let ids: Vec<LayerId> = if skin.keyframes_only {
                 // A layer's keyframe starting there; the one the playhead is on only when it
                 // tweens (otherwise it looks the same as the playhead's frame).
-                layers.iter().filter_map(|&i| tl.layers.get(i)).filter(|l| l.keyframe_starting_at(f).and_then(|k| l.keyframes.get(k)).is_some_and(|k| !k.covers(playhead) || k.tween.is_some() || k.motion.is_some())).map(|l| l.id).collect()
+                layers
+                    .iter()
+                    .filter_map(|&i| tl.layers.get(i))
+                    .filter(|l| {
+                        l.keyframe_starting_at(f)
+                            .and_then(|k| l.keyframes.get(k))
+                            .is_some_and(|k| !k.covers(playhead) || k.tween.is_some() || k.motion.is_some())
+                    })
+                    .map(|l| l.id)
+                    .collect()
             } else {
                 layers.iter().filter_map(|&i| tl.layers.get(i)).map(|l| l.id).collect()
             };
@@ -416,13 +425,20 @@ impl Session {
             starts.push(e.layers.iter().map(|l| (*l, e.frame)).collect());
         }
         // The playhead's frame: every editable layer, at the start of its keyframe there.
-        let now: Vec<(LayerId, u32)> = tl.layers.iter().enumerate().filter(|(i, _)| multi_editable(tl, *i)).filter_map(|(_, l)| l.keyframe_at(self.frame).map(|k| (l.id, k.start))).collect();
+        let now: Vec<(LayerId, u32)> = tl
+            .layers
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| multi_editable(tl, *i))
+            .filter_map(|(_, l)| l.keyframe_at(self.frame).map(|k| (l.id, k.start)))
+            .collect();
         let mut dl = (*self.display_list()).clone();
         keep_layers(&mut dl, &now.iter().map(|(l, _)| *l).collect::<Vec<_>>());
         parts.push(dl);
         starts.push(now);
         let (dl, from) = interleave(tl, parts);
-        let frames = dl.items.iter().zip(&from).map(|(it, &k)| starts.get(k).and_then(|s| s.iter().find(|(l, _)| *l == it.layer)).map(|(_, f)| *f)).collect();
+        let frames =
+            dl.items.iter().zip(&from).map(|(it, &k)| starts.get(k).and_then(|s| s.iter().find(|(l, _)| *l == it.layer)).map(|(_, f)| *f)).collect();
         (dl, frames)
     }
 
@@ -463,14 +479,24 @@ impl Session {
 
 pub fn specs() -> Vec<CommandSpec> {
     let c = |id, label, menu, shortcut, params, mutates, run| CommandSpec { id, label, menu, shortcut, params, mutates, run };
-    vec![
-        c("frames.artwork", "Artwork on Multiple Frames", "", None, "{first, last} lists every element Edit Multiple Frames shows in frames first..=last (0-based): [layer, frame (its keyframe's first frame), id] with stage bounds; the playhead's elements as they look there", false, artwork as crate::RunFn),
-    ]
+    vec![c(
+        "frames.artwork",
+        "Artwork on Multiple Frames",
+        "",
+        None,
+        "{first, last} lists every element Edit Multiple Frames shows in frames first..=last (0-based): [layer, frame (its keyframe's first frame), id] with stage bounds; the playhead's elements as they look there",
+        false,
+        artwork as crate::RunFn,
+    )]
 }
 
 fn artwork(s: &mut Session, p: &Value) -> Result<Value> {
     let (first, last) = crate::multi::range_param(p)?;
-    let items: Vec<Value> = s.multi_frame_items(first, last).into_iter().map(|(it, b)| json!({"layer": it.layer.0, "frame": it.frame, "id": it.element.0, "bounds": [b.min.x, b.min.y, b.max.x, b.max.y]})).collect();
+    let items: Vec<Value> = s
+        .multi_frame_items(first, last)
+        .into_iter()
+        .map(|(it, b)| json!({"layer": it.layer.0, "frame": it.frame, "id": it.element.0, "bounds": [b.min.x, b.min.y, b.max.x, b.max.y]}))
+        .collect();
     Ok(json!({"first": first, "last": last, "items": items}))
 }
 

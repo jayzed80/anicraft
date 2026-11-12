@@ -2,7 +2,10 @@
 
 use crate::params::*;
 use crate::{CommandSpec, EngineError, Result, Selection, Session};
-use anicraft_doc::{ColorEffect, ColorStyle, Element, ElementId, ElementKind, Layer, LayerId, LibraryEntry, LibraryItem, LoopMode, Paint, ScaleGrid, Shape, Stroke, Symbol, SymbolId, SymbolKind, Timeline};
+use anicraft_doc::{
+    ColorEffect, ColorStyle, Element, ElementId, ElementKind, Layer, LayerId, LibraryEntry, LibraryItem, LoopMode, Paint, ScaleGrid, Shape, Stroke,
+    Symbol, SymbolId, SymbolKind, Timeline,
+};
 use anicraft_geom::{Affine, Decomposed, Path, Vec2};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -10,31 +13,149 @@ use std::sync::Arc;
 pub fn specs() -> Vec<CommandSpec> {
     let c = |id, label, menu, shortcut, params, mutates, run| CommandSpec { id, label, menu, shortcut, params, mutates, run };
     vec![
-        c("draw.rect", "Rectangle", "", None, "{x, y, w, h, radius?, fill?, stroke?, stroke_width?, profile?, cap?, join?, style?, dash?, object?}", true, draw_rect as crate::RunFn),
-        c("draw.ellipse", "Oval", "", None, "{x, y, w, h, fill?, stroke?, stroke_width?, profile?, cap?, join?, style?, dash?, object?}", true, draw_ellipse),
-        c("draw.star", "PolyStar", "", None, "{cx, cy, outer, inner?, points?, fill?, stroke?, profile?, cap?, join?, style?, dash?, object?}", true, draw_star),
-        c("draw.line", "Line", "", None, "{x0, y0, x1, y1, stroke?, stroke_width?, profile? (a width profile name or [[t, left, right], ..]), cap?, join?, miter?, style?, dash?, dash_offset?, dot_spacing? (the line style, as stroke.set_style; default: the tool's), object? (true: a drawing object; default: Object Drawing, off: it merges with the raw shapes it touches)}", true, draw_line),
+        c(
+            "draw.rect",
+            "Rectangle",
+            "",
+            None,
+            "{x, y, w, h, radius?, fill?, stroke?, stroke_width?, profile?, cap?, join?, style?, dash?, object?}",
+            true,
+            draw_rect as crate::RunFn,
+        ),
+        c(
+            "draw.ellipse",
+            "Oval",
+            "",
+            None,
+            "{x, y, w, h, fill?, stroke?, stroke_width?, profile?, cap?, join?, style?, dash?, object?}",
+            true,
+            draw_ellipse,
+        ),
+        c(
+            "draw.star",
+            "PolyStar",
+            "",
+            None,
+            "{cx, cy, outer, inner?, points?, fill?, stroke?, profile?, cap?, join?, style?, dash?, object?}",
+            true,
+            draw_star,
+        ),
+        c(
+            "draw.line",
+            "Line",
+            "",
+            None,
+            "{x0, y0, x1, y1, stroke?, stroke_width?, profile? (a width profile name or [[t, left, right], ..]), cap?, join?, miter?, style?, dash?, dash_offset?, dot_spacing? (the line style, as stroke.set_style; default: the tool's), object? (true: a drawing object; default: Object Drawing, off: it merges with the raw shapes it touches)}",
+            true,
+            draw_line,
+        ),
         c("draw.object_drawing", "Object Drawing", "", Some("J"), "{on?: bool} (default: toggle)", false, object_drawing),
-        c("draw.snap_to_objects", "Snap to Objects", "View/Snapping", Some("Ctrl+Shift+/"), "{on?: bool} (default: toggle) dragged points and selections, and the points the Line, Rectangle, Oval, PolyStar and Pen tools draw, snap to points, lines and fill edges (the `snap` params of element.translate, raw.move_point, raw.move_handle and draw.snap do nothing while it is off)", false, snap_to_objects),
+        c(
+            "draw.snap_to_objects",
+            "Snap to Objects",
+            "View/Snapping",
+            Some("Ctrl+Shift+/"),
+            "{on?: bool} (default: toggle) dragged points and selections, and the points the Line, Rectangle, Oval, PolyStar and Pen tools draw, snap to points, lines and fill edges (the `snap` params of element.translate, raw.move_point, raw.move_handle and draw.snap do nothing while it is off)",
+            false,
+            snap_to_objects,
+        ),
         c("edit.select_all", "Select All", "Edit", Some("Ctrl+A"), "{}", false, select_all),
         c("edit.deselect", "Deselect All", "Edit", Some("Ctrl+Shift+A"), "{}", false, |s, _| {
             s.selection.clear();
             Ok(json!({"selected": 0}))
         }),
         c("edit.delete", "Clear", "Edit", Some("Delete"), "{} (on every layer with selected items)", true, delete_selection),
-        c("edit.duplicate", "Duplicate", "Edit", Some("Ctrl+D"), "{dx?, dy?} (each copy on its original's layer)", true, |s, p| s.each_layer(true, |s| duplicate(s, p))),
-        c("element.select", "Select Elements", "", None, "{ids: [..], add?: bool, toggle?: bool, layer?} selects elements on any visible, unlocked layer at the playhead (ids are unique; `layer` looks only there); `toggle` takes each one that is selected out of the selection and adds the others (Shift+Space on a stage element); the active layer becomes the first one's unless it has some of them", false, select),
-        c("element.pick", "Select at Point", "", None, "{x, y, add?: bool} the topmost element there on a visible, unlocked layer; `add` (Shift) adds it to the selection, or lets go of it, on any layer", false, pick),
-        c("element.translate", "Move", "", None, "{dx, dy, snap?, from?: [x, y]} moves the selection, on every layer; with `snap` (a distance) one of its corners or ends (the nearest to `from`) then snaps onto a point, line or fill edge of the rest within that distance", true, translate),
-        c("element.set_transform", "Transform", "", None, "{x?, y?, sx?, sy?, rotation? (degrees)}", true, |s, p| s.each_layer(true, |s| set_transform(s, p))),
+        c("edit.duplicate", "Duplicate", "Edit", Some("Ctrl+D"), "{dx?, dy?} (each copy on its original's layer)", true, |s, p| {
+            s.each_layer(true, |s| duplicate(s, p))
+        }),
+        c(
+            "element.select",
+            "Select Elements",
+            "",
+            None,
+            "{ids: [..], add?: bool, toggle?: bool, layer?} selects elements on any visible, unlocked layer at the playhead (ids are unique; `layer` looks only there); `toggle` takes each one that is selected out of the selection and adds the others (Shift+Space on a stage element); the active layer becomes the first one's unless it has some of them",
+            false,
+            select,
+        ),
+        c(
+            "element.pick",
+            "Select at Point",
+            "",
+            None,
+            "{x, y, add?: bool} the topmost element there on a visible, unlocked layer; `add` (Shift) adds it to the selection, or lets go of it, on any layer",
+            false,
+            pick,
+        ),
+        c(
+            "element.translate",
+            "Move",
+            "",
+            None,
+            "{dx, dy, snap?, from?: [x, y]} moves the selection, on every layer; with `snap` (a distance) one of its corners or ends (the nearest to `from`) then snaps onto a point, line or fill edge of the rest within that distance",
+            true,
+            translate,
+        ),
+        c("element.set_transform", "Transform", "", None, "{x?, y?, sx?, sy?, rotation? (degrees)}", true, |s, p| {
+            s.each_layer(true, |s| set_transform(s, p))
+        }),
         c("element.set_fill", "Fill Colour", "", None, "{color: \"#rrggbb\" | null}", true, |s, p| s.each_layer(false, |s| set_fill(s, p))),
-        c("element.set_stroke", "Stroke", "", None, "{color?: \"#rrggbb\" | null, width?, profile?: uniform|taper_both|taper_start|taper_end|bulge|pinch | [[t, left, right], ..], cap?, join?, miter?, style?, dash?, dash_offset?, dot_spacing? (as stroke.set_style)}", true, |s, p| s.each_layer(false, |s| set_stroke(s, p))),
-        c("element.set_alpha", "Alpha", "", None, "{alpha: 0..1} sets the alpha multiplier and keeps the rest of the colour effect (None becomes Alpha; Brightness and Tint become Advanced below 1)", true, |s, p| s.each_layer(true, |s| set_alpha(s, p))),
-        c("element.set_color_effect", "Colour Effect", "", None, "{style?: none|brightness|tint|advanced|alpha (default: the style the values belong to, else each element's own), alpha? (%, 0..100), brightness? (%, -100..100), tint? (#rrggbb), tint_amount? (%, 0..100), red_multiplier?, green_multiplier?, blue_multiplier?, alpha_multiplier? (%, -100..100), red_offset?, green_offset?, blue_offset?, alpha_offset? (-255..255)} on every selected element (ADR 0056); values not given keep each element's own. A new style starts from the look it can keep: Advanced is exactly the effect before, Alpha keeps the opacity, Brightness and Tint start at 0 %. The camera's effect is a tint", true, |s, p| s.each_layer(true, |s| set_color_effect(s, p))),
-        c("element.set_blend", "Blending", "", None, "{mode: normal|layer|darken|multiply|lighten|screen|overlay|hardlight|add|subtract|difference|invert|alpha|erase} on the selected movie clip and button instances", true, |s, p| s.each_layer(false, |s| set_blend(s, p))),
-        c("element.set_filters", "Filters", "", None, "{filters: [{type: blur|drop_shadow|glow|bevel|gradient_glow|gradient_bevel|adjust_color, …values}]} replaces the selected movie clip and button instances' filters (in order; [] removes them). Bevel: shadow_color, highlight_color, side: inner|outer|full, knockout; gradient filters: stops: [{offset 0..1, color \"#rrggbbaa\"}] (Gradient Glow's start and Gradient Bevel's middle stay transparent)", true, |s, p| s.each_layer(false, |s| set_filters(s, p))),
-        c("element.set_loop", "Looping", "", None, "{loop?: loop|play_once|single_frame, first_frame?}", true, |s, p| s.each_layer(false, |s| set_loop(s, p))),
-        c("symbol.set_kind", "Symbol Type", "", None, "{kind: graphic|movie_clip|button, symbol?: id (default: the symbols of every selected instance)}", true, set_symbol_kind),
+        c(
+            "element.set_stroke",
+            "Stroke",
+            "",
+            None,
+            "{color?: \"#rrggbb\" | null, width?, profile?: uniform|taper_both|taper_start|taper_end|bulge|pinch | [[t, left, right], ..], cap?, join?, miter?, style?, dash?, dash_offset?, dot_spacing? (as stroke.set_style)}",
+            true,
+            |s, p| s.each_layer(false, |s| set_stroke(s, p)),
+        ),
+        c(
+            "element.set_alpha",
+            "Alpha",
+            "",
+            None,
+            "{alpha: 0..1} sets the alpha multiplier and keeps the rest of the colour effect (None becomes Alpha; Brightness and Tint become Advanced below 1)",
+            true,
+            |s, p| s.each_layer(true, |s| set_alpha(s, p)),
+        ),
+        c(
+            "element.set_color_effect",
+            "Colour Effect",
+            "",
+            None,
+            "{style?: none|brightness|tint|advanced|alpha (default: the style the values belong to, else each element's own), alpha? (%, 0..100), brightness? (%, -100..100), tint? (#rrggbb), tint_amount? (%, 0..100), red_multiplier?, green_multiplier?, blue_multiplier?, alpha_multiplier? (%, -100..100), red_offset?, green_offset?, blue_offset?, alpha_offset? (-255..255)} on every selected element (ADR 0056); values not given keep each element's own. A new style starts from the look it can keep: Advanced is exactly the effect before, Alpha keeps the opacity, Brightness and Tint start at 0 %. The camera's effect is a tint",
+            true,
+            |s, p| s.each_layer(true, |s| set_color_effect(s, p)),
+        ),
+        c(
+            "element.set_blend",
+            "Blending",
+            "",
+            None,
+            "{mode: normal|layer|darken|multiply|lighten|screen|overlay|hardlight|add|subtract|difference|invert|alpha|erase} on the selected movie clip and button instances",
+            true,
+            |s, p| s.each_layer(false, |s| set_blend(s, p)),
+        ),
+        c(
+            "element.set_filters",
+            "Filters",
+            "",
+            None,
+            "{filters: [{type: blur|drop_shadow|glow|bevel|gradient_glow|gradient_bevel|adjust_color, …values}]} replaces the selected movie clip and button instances' filters (in order; [] removes them). Bevel: shadow_color, highlight_color, side: inner|outer|full, knockout; gradient filters: stops: [{offset 0..1, color \"#rrggbbaa\"}] (Gradient Glow's start and Gradient Bevel's middle stay transparent)",
+            true,
+            |s, p| s.each_layer(false, |s| set_filters(s, p)),
+        ),
+        c("element.set_loop", "Looping", "", None, "{loop?: loop|play_once|single_frame, first_frame?}", true, |s, p| {
+            s.each_layer(false, |s| set_loop(s, p))
+        }),
+        c(
+            "symbol.set_kind",
+            "Symbol Type",
+            "",
+            None,
+            "{kind: graphic|movie_clip|button, symbol?: id (default: the symbols of every selected instance)}",
+            true,
+            set_symbol_kind,
+        ),
         c(
             "symbol.set_scale_grid",
             "9-Slice Scaling",
@@ -45,13 +166,37 @@ pub fn specs() -> Vec<CommandSpec> {
             set_scale_grid,
         ),
         c("element.rename", "Instance Name", "", None, "{name}", true, |s, p| s.each_layer(true, |s| rename(s, p))),
-        c("arrange.bring_to_front", "Bring to Front", "Modify/Arrange", Some("Ctrl+Shift+Up"), "{} (within each layer)", true, |s, _| s.each_layer(true, |s| arrange(s, true))),
-        c("arrange.bring_forward", "Bring Forward", "Modify/Arrange", Some("Ctrl+Up"), "{} (within each layer)", true, |s, _| s.each_layer(true, |s| arrange_step(s, true))),
-        c("arrange.send_backward", "Send Backward", "Modify/Arrange", Some("Ctrl+Down"), "{} (within each layer)", true, |s, _| s.each_layer(true, |s| arrange_step(s, false))),
-        c("arrange.send_to_back", "Send to Back", "Modify/Arrange", Some("Ctrl+Shift+Down"), "{} (within each layer)", true, |s, _| s.each_layer(true, |s| arrange(s, false))),
-        c("modify.convert_to_symbol", "Convert to Symbol…", "Modify", Some("F8"), "{name? (default: the next free “Symbol n”; a name the folder holds gets a number), kind?: graphic|movie_clip|button (default: graphic), folder?: Library folder id (default: the top level)} → {symbol, instance, name, layer, folder} (a selection on several layers becomes one symbol with those layers inside; the instance lands on the topmost)", true, convert_to_symbol),
+        c("arrange.bring_to_front", "Bring to Front", "Modify/Arrange", Some("Ctrl+Shift+Up"), "{} (within each layer)", true, |s, _| {
+            s.each_layer(true, |s| arrange(s, true))
+        }),
+        c("arrange.bring_forward", "Bring Forward", "Modify/Arrange", Some("Ctrl+Up"), "{} (within each layer)", true, |s, _| {
+            s.each_layer(true, |s| arrange_step(s, true))
+        }),
+        c("arrange.send_backward", "Send Backward", "Modify/Arrange", Some("Ctrl+Down"), "{} (within each layer)", true, |s, _| {
+            s.each_layer(true, |s| arrange_step(s, false))
+        }),
+        c("arrange.send_to_back", "Send to Back", "Modify/Arrange", Some("Ctrl+Shift+Down"), "{} (within each layer)", true, |s, _| {
+            s.each_layer(true, |s| arrange(s, false))
+        }),
+        c(
+            "modify.convert_to_symbol",
+            "Convert to Symbol…",
+            "Modify",
+            Some("F8"),
+            "{name? (default: the next free “Symbol n”; a name the folder holds gets a number), kind?: graphic|movie_clip|button (default: graphic), folder?: Library folder id (default: the top level)} → {symbol, instance, name, layer, folder} (a selection on several layers becomes one symbol with those layers inside; the instance lands on the topmost)",
+            true,
+            convert_to_symbol,
+        ),
         c("modify.break_apart", "Break Apart", "Modify", Some("Ctrl+B"), "{}", true, |s, p| s.each_layer(false, |s| break_apart(s, p))),
-        c("library.place", "Place on Stage", "", None, "{symbol | bitmap | sound: id, x?, y?} or {items: [{symbol | bitmap | sound: id}, ..], x?, y?} → {element, elements, sound?}: symbols and bitmaps centred on x, y (default: the stage centre; inside an open symbol, in its space) in the active layer's keyframe at the playhead, selected; a sound goes onto that keyframe, its span grown to fit (one sound per keyframe). One undo step", true, place),
+        c(
+            "library.place",
+            "Place on Stage",
+            "",
+            None,
+            "{symbol | bitmap | sound: id, x?, y?} or {items: [{symbol | bitmap | sound: id}, ..], x?, y?} → {element, elements, sound?}: symbols and bitmaps centred on x, y (default: the stage centre; inside an open symbol, in its space) in the active layer's keyframe at the playhead, selected; a sound goes onto that keyframe, its span grown to fit (one sound per keyframe). One undo step",
+            true,
+            place,
+        ),
     ]
 }
 
@@ -107,7 +252,15 @@ fn rect_params(p: &Value) -> Result<(f32, f32, f32, f32)> {
 /// Adds a shape whose local origin is its centre, placed with a translation. Unless `object`
 /// (Object Drawing), it merges with the raw shapes it touches (ADR 0031), and the pieces of it
 /// that come out are selected.
-pub(crate) fn add_shape(s: &mut Session, name: &str, local: Path, origin: Vec2, fill: Option<Paint>, stroke: Option<Stroke>, object: bool) -> Result<Value> {
+pub(crate) fn add_shape(
+    s: &mut Session,
+    name: &str,
+    local: Path,
+    origin: Vec2,
+    fill: Option<Paint>,
+    stroke: Option<Stroke>,
+    object: bool,
+) -> Result<Value> {
     // A gradient or bitmap from the fill swatch is in stage space: it stays where it is on the
     // stage (Animate's Lock Fill after the Eyedropper).
     let fill = fill.map(|f| f.transformed(&Affine::translate(-origin.x, -origin.y)));
@@ -441,7 +594,9 @@ const EFFECT_VALUES: [(&str, ColorStyle, f32, f32, f32); 11] = [
 
 fn set_color_effect(s: &mut Session, p: &Value) -> Result<Value> {
     let style = match opt_str(p, "style")? {
-        Some(k) => Some(ColorStyle::from_key(k).ok_or_else(|| EngineError::Param(format!("unknown style '{k}' (none, brightness, tint, advanced or alpha)")))?),
+        Some(k) => Some(
+            ColorStyle::from_key(k).ok_or_else(|| EngineError::Param(format!("unknown style '{k}' (none, brightness, tint, advanced or alpha)")))?,
+        ),
         None => None,
     };
     let tint = opt_color(p, "tint")?;
@@ -459,7 +614,9 @@ fn set_color_effect(s: &mut Session, p: &Value) -> Result<Value> {
         }
     }
     let style = match (style, families.as_slice()) {
-        (Some(st), f) if f.iter().any(|x| *x != st) => return Err(EngineError::Param(format!("the {} style has none of these values: give only its own", st.key()))),
+        (Some(st), f) if f.iter().any(|x| *x != st) => {
+            return Err(EngineError::Param(format!("the {} style has none of these values: give only its own", st.key())));
+        }
         (Some(st), _) => Some(st),
         (None, []) => return Err(EngineError::Param("give a style, or a value to set".into())),
         (None, [one]) => Some(*one),
@@ -526,7 +683,11 @@ fn set_filters(s: &mut Session, p: &Value) -> Result<Value> {
             }
         }
     }
-    let filters: Vec<anicraft_doc::Filter> = serde_json::from_value(list).map_err(|e| EngineError::Param(format!("'filters' must be a list of {{type: blur|drop_shadow|glow|bevel|gradient_glow|gradient_bevel|adjust_color, …}}: {e}")))?;
+    let filters: Vec<anicraft_doc::Filter> = serde_json::from_value(list).map_err(|e| {
+        EngineError::Param(format!(
+            "'filters' must be a list of {{type: blur|drop_shadow|glow|bevel|gradient_glow|gradient_bevel|adjust_color, …}}: {e}"
+        ))
+    })?;
     if filters.len() > MAX_FILTERS {
         return Err(EngineError::Param(format!("at most {MAX_FILTERS} filters per instance")));
     }
@@ -633,7 +794,11 @@ fn set_symbol_kind(s: &mut Session, p: &Value) -> Result<Value> {
                 }
             }
             if ids.is_empty() {
-                return Err(EngineError::State(if s.selection.is_empty() { "select a symbol instance, or pass 'symbol'".into() } else { "the selection is not a symbol instance".into() }));
+                return Err(EngineError::State(if s.selection.is_empty() {
+                    "select a symbol instance, or pass 'symbol'".into()
+                } else {
+                    "the selection is not a symbol instance".into()
+                }));
             }
             ids
         }
@@ -691,7 +856,12 @@ fn set_scale_grid(s: &mut Session, p: &Value) -> Result<Value> {
             ScaleGrid::inset(&if b.is_empty() { anicraft_geom::Rect::new(0.0, 0.0, 100.0, 100.0) } else { b })
         });
         let [l, r, t, b] = edges;
-        let g = ScaleGrid { left: l.unwrap_or(start.left), right: r.unwrap_or(start.right), top: t.unwrap_or(start.top), bottom: b.unwrap_or(start.bottom) };
+        let g = ScaleGrid {
+            left: l.unwrap_or(start.left),
+            right: r.unwrap_or(start.right),
+            top: t.unwrap_or(start.top),
+            bottom: b.unwrap_or(start.bottom),
+        };
         g.check().map_err(EngineError::Param)?;
         Some(g)
     };
@@ -821,7 +991,14 @@ pub(crate) fn convert_to_symbol(s: &mut Session, p: &Value) -> Result<Value> {
         name: String::new(),
         transform: Affine::translate(center.x, center.y),
         color: ColorEffect::default(),
-        kind: ElementKind::Symbol { symbol: sym_id, loop_mode: LoopMode::Loop, first_frame: 0, blend: anicraft_doc::BlendMode::Normal, filters: Vec::new(), events: Vec::new() },
+        kind: ElementKind::Symbol {
+            symbol: sym_id,
+            loop_mode: LoopMode::Loop,
+            first_frame: 0,
+            blend: anicraft_doc::BlendMode::Normal,
+            filters: Vec::new(),
+            events: Vec::new(),
+        },
     };
     // Children are stored relative to the registration point (the selection centre).
     let to_local = Affine::translate(-center.x, -center.y);
@@ -855,7 +1032,15 @@ pub(crate) fn convert_to_symbol(s: &mut Session, p: &Value) -> Result<Value> {
         }
         inner.push(Arc::new(layer));
     }
-    s.doc.library.push(Arc::new(Symbol { id: sym_id, name: name.clone(), kind, linkage: None, scale_grid_kept: None, scale_grid: None, timeline: Timeline { layers: inner } }));
+    s.doc.library.push(Arc::new(Symbol {
+        id: sym_id,
+        name: name.clone(),
+        kind,
+        linkage: None,
+        scale_grid_kept: None,
+        scale_grid: None,
+        timeline: Timeline { layers: inner },
+    }));
     if folder.is_some() {
         s.doc.place_entry(LibraryEntry::Item(LibraryItem::Symbol(sym_id)), folder);
     }
@@ -926,7 +1111,9 @@ const MAX_PLACE: usize = 1_000;
 pub(crate) fn place(s: &mut Session, p: &Value) -> Result<Value> {
     let items: Vec<LibraryItem> = match p.get("items") {
         Some(list) => {
-            let list = list.as_array().ok_or_else(|| EngineError::Param("param 'items' must be a list of {\"symbol\" | \"bitmap\" | \"sound\": id}".into()))?;
+            let list = list
+                .as_array()
+                .ok_or_else(|| EngineError::Param("param 'items' must be a list of {\"symbol\" | \"bitmap\" | \"sound\": id}".into()))?;
             if list.len() > MAX_PLACE {
                 return Err(EngineError::Param(format!("at most {MAX_PLACE} items at once")));
             }
@@ -959,10 +1146,14 @@ pub(crate) fn place(s: &mut Session, p: &Value) -> Result<Value> {
             }));
         }
         match i {
-            LibraryItem::Symbol(id) if crate::editing::would_nest(s, id) => return Err(EngineError::State("a symbol can't be placed inside itself".into())),
+            LibraryItem::Symbol(id) if crate::editing::would_nest(s, id) => {
+                return Err(EngineError::State("a symbol can't be placed inside itself".into()));
+            }
             LibraryItem::Sound(id) => {
                 if sound.is_some_and(|x| x != id) {
-                    return Err(EngineError::State("a keyframe holds one sound; place sounds one at a time, on different keyframes or layers".into()));
+                    return Err(EngineError::State(
+                        "a keyframe holds one sound; place sounds one at a time, on different keyframes or layers".into(),
+                    ));
                 }
                 sound = Some(id);
             }
@@ -1002,7 +1193,14 @@ fn place_symbol(s: &mut Session, sym: SymbolId, x: f32, y: f32) -> Result<Elemen
         name: String::new(),
         transform: Affine::translate(x, y),
         color: ColorEffect::default(),
-        kind: ElementKind::Symbol { symbol: sym, loop_mode: LoopMode::Loop, first_frame: 0, blend: anicraft_doc::BlendMode::Normal, filters: Vec::new(), events: Vec::new() },
+        kind: ElementKind::Symbol {
+            symbol: sym,
+            loop_mode: LoopMode::Loop,
+            first_frame: 0,
+            blend: anicraft_doc::BlendMode::Normal,
+            filters: Vec::new(),
+            events: Vec::new(),
+        },
     };
     s.editable_keyframe()?.elements.push(Arc::new(el));
     Ok(id)

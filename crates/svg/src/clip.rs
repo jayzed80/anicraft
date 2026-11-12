@@ -10,7 +10,10 @@
 //!   convex polygons (`anicraft_geom::clip`), else one is kept and the report counts it;
 //! * consecutive items with the same mask share one masked layer under one mask layer.
 
-use crate::{Builder, ImportedElement, ImportedLayer, ImportedMask, Item, PaintSpec, Report, Style, declarations, get, hidden, length, local, name_of, paint_spec, transform};
+use crate::{
+    Builder, ImportedElement, ImportedLayer, ImportedMask, Item, PaintSpec, Report, Style, declarations, get, hidden, length, local, name_of,
+    paint_spec, transform,
+};
 use anicraft_doc::{ElementKind, Paint, Rgba, Shape, Stroke};
 use anicraft_geom::clip::{clip_convex, convex_polygon};
 use anicraft_geom::{Affine, FillRule, Path, Rect, Vec2};
@@ -324,7 +327,10 @@ impl<'a> Builder<'a> {
             return Some(Vec::new());
         }
         let area = mask_part(String::new(), Path::rect(rect.min.x, rect.min.y, rect.width(), rect.height()), *m, FillRule::NonZero);
-        Some(vec![Region::new(format!("mask:{target:p}:{:?}", content_m.m), id, parts), Region::new(format!("maskarea:{target:p}:{:?}:{rect:?}", m.m), id, vec![area])])
+        Some(vec![
+            Region::new(format!("mask:{target:p}:{:?}", content_m.m), id, parts),
+            Region::new(format!("maskarea:{target:p}:{:?}:{rect:?}", m.m), id, vec![area]),
+        ])
     }
 
     /// What an item's clips come to (combinations are cached by key; `None` = hidden).
@@ -407,6 +413,8 @@ impl<'a> Builder<'a> {
                 _ => runs.push((region, vec![it.el])),
             }
         }
-        runs.into_iter().map(|(r, elements)| ImportedLayer { mask: r.map(|r| ImportedMask { name: r.name.clone(), elements: r.parts.clone() }), elements }).collect()
+        runs.into_iter()
+            .map(|(r, elements)| ImportedLayer { mask: r.map(|r| ImportedMask { name: r.name.clone(), elements: r.parts.clone() }), elements })
+            .collect()
     }
 }

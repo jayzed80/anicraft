@@ -33,7 +33,12 @@ pub fn load_at_start(app: &mut App) {
     let Some(folder) = folder else { return };
     match app.s.execute("plugin.reload", &json!({"folder": folder.display().to_string()})) {
         Ok(v) => {
-            let failed: Vec<String> = v["failed"].as_array().into_iter().flatten().map(|f| format!("{} ({})", f["file"].as_str().unwrap_or(""), f["error"].as_str().unwrap_or(""))).collect();
+            let failed: Vec<String> = v["failed"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|f| format!("{} ({})", f["file"].as_str().unwrap_or(""), f["error"].as_str().unwrap_or("")))
+                .collect();
             if !failed.is_empty() {
                 app.status_err(tr!("Some plug-ins could not be loaded: {list}", list = failed.join("; ")));
             }
@@ -171,13 +176,15 @@ fn control(ui: &mut egui::Ui, name: &str, kind: &ParamKind, v: &mut Value) -> bo
         ParamKind::Choice { options, .. } => {
             let mut cur = v.as_str().unwrap_or("").to_string();
             let mut changed = false;
-            egui::ComboBox::from_id_salt(ui.next_auto_id()).selected_text(text(Type::Body, cur.clone())).show_ui(ui, |ui| {
-                for o in options {
-                    changed |= ui.selectable_value(&mut cur, o.clone(), text(Type::Body, o.clone())).changed();
-                }
-            })
-            .response
-            .set_name(name);
+            egui::ComboBox::from_id_salt(ui.next_auto_id())
+                .selected_text(text(Type::Body, cur.clone()))
+                .show_ui(ui, |ui| {
+                    for o in options {
+                        changed |= ui.selectable_value(&mut cur, o.clone(), text(Type::Body, o.clone())).changed();
+                    }
+                })
+                .response
+                .set_name(name);
             *v = json!(cur);
             changed
         }
@@ -390,7 +397,12 @@ pub fn status(app: &mut App, id: &str, v: &Value) {
             let n = v["installed"].as_u64().unwrap_or(0);
             let failed = v["failed"].as_array().map_or(0, Vec::len);
             if failed > 0 {
-                app.status_err(trn!("{n} plug-in installed; {failed} could not be loaded", "{n} plug-ins installed; {failed} could not be loaded", n, failed = failed));
+                app.status_err(trn!(
+                    "{n} plug-in installed; {failed} could not be loaded",
+                    "{n} plug-ins installed; {failed} could not be loaded",
+                    n,
+                    failed = failed
+                ));
             } else {
                 app.status_ok(trn!("{n} plug-in installed", "{n} plug-ins installed", n));
             }

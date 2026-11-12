@@ -3,7 +3,10 @@
 use crate::camera::Camera;
 use crate::nine_slice::Slicing;
 use crate::player::PlayerState;
-use crate::{ColorTransform, Document, Element, ElementId, ElementKind, Layer, LayerId, LayerKind, Paint, Rgba, Shape, Stroke, SymbolId, SymbolKind, Timeline, TweenKind};
+use crate::{
+    ColorTransform, Document, Element, ElementId, ElementKind, Layer, LayerId, LayerKind, Paint, Rgba, Shape, Stroke, SymbolId, SymbolKind, Timeline,
+    TweenKind,
+};
 use anicraft_geom::walk::PathWalk;
 use anicraft_geom::{Affine, FillRule, Path};
 use std::borrow::Cow;
@@ -107,7 +110,13 @@ impl DisplayList {
         let gbase = self.groups.len() as u32;
         let gshift = |g: Option<u32>| g.map(|g| g + gbase);
         self.clip_parents.extend(other.clip_parents.into_iter().map(shift));
-        self.groups.extend(other.groups.into_iter().map(|g| Group { parent: gshift(g.parent), alpha: g.alpha, blend: g.blend, filters: g.filters, clip: shift(g.clip) }));
+        self.groups.extend(other.groups.into_iter().map(|g| Group {
+            parent: gshift(g.parent),
+            alpha: g.alpha,
+            blend: g.blend,
+            filters: g.filters,
+            clip: shift(g.clip),
+        }));
         self.items.extend(other.items.into_iter().map(|mut i| {
             i.clip = shift(i.clip);
             i.masks = shift(i.masks);
@@ -213,7 +222,9 @@ pub fn evaluate_layer_elements(layer: &Layer, frame: u32) -> Option<(u32, Cow<'_
 /// (tweened between pose keyframes): forward kinematics from the root's own transform.
 pub fn evaluate_guided<'a>(layer: &'a Layer, frame: u32, guide: Option<&PathWalk>) -> Option<(u32, Cow<'a, [Arc<Element>]>)> {
     let (start, els) = evaluate_tweened(layer, frame, guide)?;
-    let Some(arm) = layer.armature.as_deref().filter(|a| layer.kind == crate::LayerKind::Armature && !a.is_empty()) else { return Some((start, els)) };
+    let Some(arm) = layer.armature.as_deref().filter(|a| layer.kind == crate::LayerKind::Armature && !a.is_empty()) else {
+        return Some((start, els));
+    };
     let pose = crate::armature::pose_at(layer, frame).unwrap_or_default();
     let mut els = els.into_owned();
     crate::armature::apply(arm, &mut els, &pose);
@@ -226,7 +237,9 @@ fn evaluate_tweened<'a>(layer: &'a Layer, frame: u32, guide: Option<&PathWalk>) 
     // A motion tween: its target follows the property curves (and its motion path, ADR 0030);
     // anything else on the key holds.
     if let Some(m) = &kf.motion {
-        let Some(i) = m.target_index(&kf.elements).filter(|_| !m.tracks.is_empty() || m.path.is_some()) else { return Some((kf.start, Cow::Borrowed(&kf.elements))) };
+        let Some(i) = m.target_index(&kf.elements).filter(|_| !m.tracks.is_empty() || m.path.is_some()) else {
+            return Some((kf.start, Cow::Borrowed(&kf.elements)));
+        };
         let mut els = kf.elements.clone();
         if let Some(slot) = els.get_mut(i) {
             *slot = Arc::new(m.apply(slot, (frame - kf.start) as f32));
@@ -258,7 +271,14 @@ fn evaluate_tweened<'a>(layer: &'a Layer, frame: u32, guide: Option<&PathWalk>) 
 /// shapes of different structure blend through [`anicraft_geom::morph`], steered by `hints`
 /// (shape hints in each element's own space, ADR 0023); otherwise a shape changes only when
 /// both keyframes share its structure.
-fn interpolate(a: &Element, b: &Element, t: f32, morph: bool, hints: &[(anicraft_geom::Vec2, anicraft_geom::Vec2)], guide: Option<(&PathWalk, bool)>) -> Option<Element> {
+fn interpolate(
+    a: &Element,
+    b: &Element,
+    t: f32,
+    morph: bool,
+    hints: &[(anicraft_geom::Vec2, anicraft_geom::Vec2)],
+    guide: Option<(&PathWalk, bool)>,
+) -> Option<Element> {
     let kind = match (&a.kind, &b.kind) {
         (ElementKind::Shape(sa), ElementKind::Shape(sb)) => {
             let path = if Arc::ptr_eq(&sa.path, &sb.path) && hints.is_empty() {
@@ -322,7 +342,20 @@ struct Ctx {
 
 impl Ctx {
     fn top(xf: Affine) -> Ctx {
-        Ctx { xf, color: ColorTransform::IDENTITY, depth: 0, root: None, outline: None, stage: true, clip: None, masks: None, guide: false, group: None, camera: None, slice: None }
+        Ctx {
+            xf,
+            color: ColorTransform::IDENTITY,
+            depth: 0,
+            root: None,
+            outline: None,
+            stage: true,
+            clip: None,
+            masks: None,
+            guide: false,
+            group: None,
+            camera: None,
+            slice: None,
+        }
     }
 
     /// A main timeline seen through `camera`: its tint colours everything.
@@ -410,7 +443,11 @@ fn eval_timeline(doc: &Document, tl: &Timeline, frame: u32, cx: &Ctx, out: &mut 
         // it plays no part at all.
         let is_guide = layer.kind == LayerKind::Guide;
         // The camera layer holds the camera, not artwork (ADR 0027).
-        if !layer.visible || matches!(layer.kind, LayerKind::Folder | LayerKind::Camera) || (is_guide && cx.masks.is_some()) || (has_folders && tl.hidden_by_folder(index)) {
+        if !layer.visible
+            || matches!(layer.kind, LayerKind::Folder | LayerKind::Camera)
+            || (is_guide && cx.masks.is_some())
+            || (has_folders && tl.hidden_by_folder(index))
+        {
             continue;
         }
         let (clip, masks) = match (cx.masks, layer.kind) {
@@ -481,23 +518,26 @@ fn eval_timeline(doc: &Document, tl: &Timeline, frame: u32, cx: &Ctx, out: &mut 
                     });
                 }
                 ElementKind::Text(t) => {
-                    let item = |path: Arc<Path>, transform: Affine, fill: Option<Paint>, stroke: Option<Stroke>, clip: Option<u32>, masks: Option<u32>| DisplayItem {
-                        path,
-                        transform,
-                        fill,
-                        stroke,
-                        fill_rule: FillRule::NonZero,
-                        color,
-                        layer: root_layer,
-                        element: root_el,
-                        outline: layer_outline,
-                        clip,
-                        masks,
-                        guide,
-                        group: cx.group,
-                        image: None,
-                        smooth: true,
-                    };
+                    let item =
+                        |path: Arc<Path>, transform: Affine, fill: Option<Paint>, stroke: Option<Stroke>, clip: Option<u32>, masks: Option<u32>| {
+                            DisplayItem {
+                                path,
+                                transform,
+                                fill,
+                                stroke,
+                                fill_rule: FillRule::NonZero,
+                                color,
+                                layer: root_layer,
+                                element: root_el,
+                                outline: layer_outline,
+                                clip,
+                                masks,
+                                guide,
+                                group: cx.group,
+                                image: None,
+                                smooth: true,
+                            }
+                        };
                     match &t.field {
                         // Mask artwork: a field's text masks; its box and border don't.
                         Some(f) if masks.is_none() => {
@@ -505,7 +545,11 @@ fn eval_timeline(doc: &Document, tl: &Timeline, frame: u32, cx: &Ctx, out: &mut 
                             field_items(t, f, live, xf, clip, out, item);
                         }
                         _ => {
-                            let path = child.as_ref().and_then(|c| c.state.fields.get(&c.path)).and_then(|s| s.look.as_ref()).map_or_else(|| t.outline.clone(), |l| l.outline.clone());
+                            let path = child
+                                .as_ref()
+                                .and_then(|c| c.state.fields.get(&c.path))
+                                .and_then(|s| s.look.as_ref())
+                                .map_or_else(|| t.outline.clone(), |l| l.outline.clone());
                             out.items.push(item(path, xf, Some(Paint::Solid(t.color)), None, clip, masks));
                         }
                     }
@@ -535,7 +579,13 @@ fn eval_timeline(doc: &Document, tl: &Timeline, frame: u32, cx: &Ctx, out: &mut 
                     let fade = fx.alpha_factor().unwrap_or(1.0);
                     let (color, group) = if masks.is_none() && (fade < 1.0 - 1e-4 || !blend.is_normal() || !filters.is_empty()) {
                         let gid = out.groups.len() as u32;
-                        out.groups.push(Group { parent: cx.group, alpha: fade, blend: *blend, filters: filters.iter().map(crate::Filter::sanitized).collect(), clip });
+                        out.groups.push(Group {
+                            parent: cx.group,
+                            alpha: fade,
+                            blend: *blend,
+                            filters: filters.iter().map(crate::Filter::sanitized).collect(),
+                            clip,
+                        });
                         let inner = if fx.alpha_factor().is_some() { fx.without_alpha() } else { fx };
                         (cx.color.concat(&inner), Some(gid))
                     } else {
@@ -543,7 +593,20 @@ fn eval_timeline(doc: &Document, tl: &Timeline, frame: u32, cx: &Ctx, out: &mut 
                     };
                     // A symbol with 9-slice guides, scaled: its shapes are sliced (ADR 0055).
                     let slice = crate::nine_slice::slicing(doc, sym, &el.transform).map(|s| Slicing { post: layer_xf.mul(&s.post), ..s });
-                    let inner = Ctx { xf, color, depth: cx.depth + 1, root: Some((root_layer, root_el)), outline: layer_outline, stage: cx.stage, clip, masks, guide, group, camera: None, slice };
+                    let inner = Ctx {
+                        xf,
+                        color,
+                        depth: cx.depth + 1,
+                        root: Some((root_layer, root_el)),
+                        outline: layer_outline,
+                        stage: cx.stage,
+                        clip,
+                        masks,
+                        guide,
+                        group,
+                        camera: None,
+                        slice,
+                    };
                     eval_timeline(doc, &sym.timeline, local, &inner, out, child.as_ref());
                 }
             }
@@ -557,7 +620,15 @@ pub const SELECTION: Rgba = Rgba::new(0.62, 0.78, 1.0, 1.0);
 /// A dynamic or input field's items (ADR 0066): its background, its text cut to its box, the
 /// selection and caret when it has the keyboard, and its border. `live` is its state in the
 /// player (and whether it is focused); without one, it shows its authored outline.
-fn field_items(t: &crate::TextBlock, f: &crate::TextField, live: Option<(Option<&crate::field::FieldState>, bool)>, xf: Affine, clip: Option<u32>, out: &mut DisplayList, item: impl Fn(Arc<Path>, Affine, Option<Paint>, Option<Stroke>, Option<u32>, Option<u32>) -> DisplayItem) {
+fn field_items(
+    t: &crate::TextBlock,
+    f: &crate::TextField,
+    live: Option<(Option<&crate::field::FieldState>, bool)>,
+    xf: Affine,
+    clip: Option<u32>,
+    out: &mut DisplayList,
+    item: impl Fn(Arc<Path>, Affine, Option<Paint>, Option<Stroke>, Option<u32>, Option<u32>) -> DisplayItem,
+) {
     let (w, h) = (t.box_width.max(0.0), t.box_height.max(0.0));
     let rect = Arc::new(Path::rect(0.0, 0.0, w, h));
     if f.background {

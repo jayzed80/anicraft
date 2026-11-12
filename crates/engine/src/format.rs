@@ -72,7 +72,13 @@ impl<'de> Deserialize<'de> for EnvelopeIn {
 
 pub fn to_json(doc: &Document) -> Result<String, EngineError> {
     let paths = path_table::build_table(doc);
-    let env = EnvelopeOut { format: FORMAT_NAME, version: FORMAT_VERSION, generator: format!("AniCraft {}", env!("CARGO_PKG_VERSION")), paths: &paths, document: doc };
+    let env = EnvelopeOut {
+        format: FORMAT_NAME,
+        version: FORMAT_VERSION,
+        generator: format!("AniCraft {}", env!("CARGO_PKG_VERSION")),
+        paths: &paths,
+        document: doc,
+    };
     let compact = path_table::write_with_paths(&paths, || serde_json::to_string(&env)).map_err(|e| EngineError::Format(e.to_string()))?;
     if compact.len() < PRETTY_LIMIT {
         return path_table::write_with_paths(&paths, || serde_json::to_string_pretty(&env)).map_err(|e| EngineError::Format(e.to_string()));
@@ -132,7 +138,11 @@ mod tests {
         let back = from_json(&json).unwrap();
         assert_eq!(d, back);
         let l = &back.timeline(0).layers[0];
-        let (anicraft_doc::ElementKind::Shape(a), anicraft_doc::ElementKind::Shape(b)) = (&l.keyframes[0].elements[0].kind, &l.keyframes[3].elements[0].kind) else { panic!() };
+        let (anicraft_doc::ElementKind::Shape(a), anicraft_doc::ElementKind::Shape(b)) =
+            (&l.keyframes[0].elements[0].kind, &l.keyframes[3].elements[0].kind)
+        else {
+            panic!()
+        };
         assert!(Arc::ptr_eq(&a.path, &b.path), "sharing restored on load");
     }
 
@@ -162,7 +172,10 @@ mod tests {
 
     #[test]
     fn missing_fields_default() {
-        let d = from_json(r#"{"format":"anicraft","version":1,"document":{"stage":{"width":0,"height":50,"fps":-3,"background":{"r":2,"g":0,"b":0,"a":1}}}}"#).unwrap();
+        let d = from_json(
+            r#"{"format":"anicraft","version":1,"document":{"stage":{"width":0,"height":50,"fps":-3,"background":{"r":2,"g":0,"b":0,"a":1}}}}"#,
+        )
+        .unwrap();
         assert_eq!(d.stage.width, 1);
         assert_eq!(d.stage.fps, 24.0);
         assert_eq!(d.stage.background.r, 1.0);

@@ -27,12 +27,48 @@ pub fn specs() -> Vec<CommandSpec> {
             true,
             add as crate::RunFn,
         ),
-        c("bone.remove", "Remove Bone", "{bone} removes it and the bones below it; the instances they moved go to a layer of their own as they look at the playhead (with the last bone, the whole armature does); asks first when the armature has more than one pose", true, remove),
-        c("bone.set_limits", "Joint Limits", "{bone, constrain?: bool (false: turns freely), min?, max? (°, −360…360, from where it was drawn)} limits how far the joint turns, in every pose", true, set_limits),
-        c("bone.pin", "Pin Bone", "{bone, pinned: bool} a pinned bone (and the bones it hangs from) stays put while dragging bones below it", true, pin),
-        c("bone.pose", "Pose Bone", "{bone?, angle? (°, the joint angle: 0 as drawn), rotate_by? (°), dx?, dy? (moves the whole armature), layer? (the armature layer, when no bone is given), frame?} keys the pose at the frame", true, pose),
-        c("bone.solve", "Drag Bone", "{bone, x, y (stage px: where the bone's end goes), local?: [x, y] (the point dragged, in the bone's instance's space; default its end), frame?} → {reached, error (px), chain}; inverse kinematics turns the bone and the bones above it (limits respected, pinned bones kept)", true, solve),
-        c("bone.info", "Armatures", "{frame?, layer?} → every armature on the scene at the frame: its bones with joint and end (stage px), joint angle and limits (°), pinned", false, info),
+        c(
+            "bone.remove",
+            "Remove Bone",
+            "{bone} removes it and the bones below it; the instances they moved go to a layer of their own as they look at the playhead (with the last bone, the whole armature does); asks first when the armature has more than one pose",
+            true,
+            remove,
+        ),
+        c(
+            "bone.set_limits",
+            "Joint Limits",
+            "{bone, constrain?: bool (false: turns freely), min?, max? (°, −360…360, from where it was drawn)} limits how far the joint turns, in every pose",
+            true,
+            set_limits,
+        ),
+        c(
+            "bone.pin",
+            "Pin Bone",
+            "{bone, pinned: bool} a pinned bone (and the bones it hangs from) stays put while dragging bones below it",
+            true,
+            pin,
+        ),
+        c(
+            "bone.pose",
+            "Pose Bone",
+            "{bone?, angle? (°, the joint angle: 0 as drawn), rotate_by? (°), dx?, dy? (moves the whole armature), layer? (the armature layer, when no bone is given), frame?} keys the pose at the frame",
+            true,
+            pose,
+        ),
+        c(
+            "bone.solve",
+            "Drag Bone",
+            "{bone, x, y (stage px: where the bone's end goes), local?: [x, y] (the point dragged, in the bone's instance's space; default its end), frame?} → {reached, error (px), chain}; inverse kinematics turns the bone and the bones above it (limits respected, pinned bones kept)",
+            true,
+            solve,
+        ),
+        c(
+            "bone.info",
+            "Armatures",
+            "{frame?, layer?} → every armature on the scene at the frame: its bones with joint and end (stage px), joint angle and limits (°), pinned",
+            false,
+            info,
+        ),
     ]
 }
 
@@ -56,8 +92,7 @@ fn find_instance(s: &Session, id: ElementId) -> Option<Found> {
 
 /// The armature layer holding bone `id`, and its armature.
 fn find_bone(s: &Session, id: BoneId) -> Result<(LayerId, Arc<Armature>)> {
-    s
-        .timeline()
+    s.timeline()
         .layers
         .iter()
         .filter(|l| l.kind == LayerKind::Armature)
@@ -77,7 +112,9 @@ fn opt_point(p: &Value, key: &str) -> Result<Option<Vec2>> {
     match p.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Array(a)) if a.len() == 2 => {
-            let n = |i: usize| a.get(i).and_then(Value::as_f64).filter(|v| v.is_finite() && v.abs() <= f64::from(MAX_COORD)).map(|v| v as f32).ok_or_else(bad);
+            let n = |i: usize| {
+                a.get(i).and_then(Value::as_f64).filter(|v| v.is_finite() && v.abs() <= f64::from(MAX_COORD)).map(|v| v as f32).ok_or_else(bad)
+            };
             Ok(Some(Vec2::new(n(0)?, n(1)?)))
         }
         Some(_) => Err(bad()),
@@ -135,7 +172,9 @@ fn add(s: &mut Session, p: &Value) -> Result<Value> {
     let t = find_instance(s, to).ok_or_else(|| missing(to))?;
     for x in [&f, &t] {
         if !matches!(x.el.kind, ElementKind::Symbol { .. }) {
-            return Err(EngineError::State("bones join symbol instances: convert the artwork to a symbol first (Modify › Convert to Symbol, F8)".into()));
+            return Err(EngineError::State(
+                "bones join symbol instances: convert the artwork to a symbol first (Modify › Convert to Symbol, F8)".into(),
+            ));
         }
         if !matches!(x.kind, LayerKind::Normal | LayerKind::Armature) {
             return Err(EngineError::State("bones join instances on normal layers (not on guide or mask layers)".into()));
@@ -146,8 +185,12 @@ fn add(s: &mut Session, p: &Value) -> Result<Value> {
     let arm_of = |x: &Found| (x.kind == LayerKind::Armature).then(|| tl.layer(x.layer).and_then(|l| l.armature.clone()).unwrap_or_default());
     let (fa, ta) = (arm_of(&f), arm_of(&t));
     match (&fa, &ta) {
-        (_, Some(a)) if f.layer == t.layer && a.bone_into(to).is_some() => return Err(EngineError::State("that instance already hangs from a bone; each instance has one bone into it".into())),
-        (_, Some(_)) if f.layer == t.layer => return Err(EngineError::State("that instance is the armature's root: drag from the root to the other instances instead".into())),
+        (_, Some(a)) if f.layer == t.layer && a.bone_into(to).is_some() => {
+            return Err(EngineError::State("that instance already hangs from a bone; each instance has one bone into it".into()));
+        }
+        (_, Some(_)) if f.layer == t.layer => {
+            return Err(EngineError::State("that instance is the armature's root: drag from the root to the other instances instead".into()));
+        }
         (None, Some(_)) => return Err(EngineError::State("start the bone on the armature: drag from one of its instances to the new one".into())),
         (Some(_), Some(_)) => return Err(EngineError::State("those instances are in different armatures".into())),
         _ => {}
@@ -186,7 +229,8 @@ fn add(s: &mut Session, p: &Value) -> Result<Value> {
         None => {
             // The first bone: both instances move to a new armature layer above them, whose one
             // pose spans from their keyframe to the end of the timeline.
-            let (start, end) = s.timeline().layer(f.layer).and_then(|l| l.keyframe_at(s.frame)).map_or((s.frame, s.frame + 1), |k| (k.start, k.end()));
+            let (start, end) =
+                s.timeline().layer(f.layer).and_then(|l| l.keyframe_at(s.frame)).map_or((s.frame, s.frame + 1), |k| (k.start, k.end()));
             let end = end.max(s.frame_count());
             take_off(s, f.layer, from)?;
             if s.timeline().layers.len() >= 1000 {
@@ -236,7 +280,8 @@ fn remove(s: &mut Session, p: &Value) -> Result<Value> {
     let (start, end) = (layer.keyframes.first().map_or(0, |k| k.start), layer.end_frame());
     // The freed instances as they look at the playhead (or at the armature's first frame).
     let at = s.frame.clamp(start, end.saturating_sub(1).max(start));
-    let shown: Vec<Arc<Element>> = evaluate_layer_elements(layer, at).map(|(_, e)| e.iter().filter(|e| freed.contains(&e.id)).cloned().collect()).unwrap_or_default();
+    let shown: Vec<Arc<Element>> =
+        evaluate_layer_elements(layer, at).map(|(_, e)| e.iter().filter(|e| freed.contains(&e.id)).cloned().collect()).unwrap_or_default();
     let folder = layer.parent.filter(|p| tl.layer(*p).is_some_and(|x| x.kind == LayerKind::Folder));
     let new_id = LayerId(s.doc.alloc_id());
     let mut freed_layer = Layer::new(new_id, fresh_name(s, "Layer "));
@@ -262,7 +307,9 @@ fn remove(s: &mut Session, p: &Value) -> Result<Value> {
     tl.repair_masks();
     s.layer = if dissolve { new_id } else { lid };
     s.selection.clear();
-    Ok(json!({"removed": gone.iter().map(|b| b.0).collect::<Vec<_>>(), "freed": freed.iter().map(|e| e.0).collect::<Vec<_>>(), "layer": new_id.0, "armature_removed": dissolve}))
+    Ok(
+        json!({"removed": gone.iter().map(|b| b.0).collect::<Vec<_>>(), "freed": freed.iter().map(|e| e.0).collect::<Vec<_>>(), "layer": new_id.0, "armature_removed": dissolve}),
+    )
 }
 
 fn set_limits(s: &mut Session, p: &Value) -> Result<Value> {
@@ -402,7 +449,8 @@ fn solve(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let tail = arm.bone(id).map_or(Vec2::new(0.0, 0.0), |b| b.tail);
     edit_pose(s, lid, frame, |arm, kf| {
-        let r = armature::solve(arm, &kf.elements, &kf.pose, id, local.unwrap_or(tail), target).ok_or_else(|| EngineError::State("the bone's instances aren't on this frame".into()))?;
+        let r = armature::solve(arm, &kf.elements, &kf.pose, id, local.unwrap_or(tail), target)
+            .ok_or_else(|| EngineError::State("the bone's instances aren't on this frame".into()))?;
         kf.pose = r.pose;
         Ok(json!({"bone": id.0, "reached": r.error <= 0.5, "error": r.error, "chain": r.chain}))
     })

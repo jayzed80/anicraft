@@ -23,19 +23,99 @@ use std::sync::Arc;
 pub fn specs() -> Vec<CommandSpec> {
     let c = |id, label, menu, shortcut, params, mutates, run| CommandSpec { id, label, menu, shortcut, params, mutates, run };
     vec![
-        c("motion.set_key", "Property Keyframe", "", None, "{property: x|y|scale_x|scale_y|rotation|skew|alpha|brightness|tint (amount)|tint_red|tint_green|tint_blue (0..255)|red_multiplier|green_multiplier|blue_multiplier|alpha_multiplier (%)|red_offset|green_offset|blue_offset|alpha_offset (-255..255), value (px, %, °), frame?, layer?} (colour properties of several styles compose into Advanced, ADR 0056)", true, set_key as crate::RunFn),
+        c(
+            "motion.set_key",
+            "Property Keyframe",
+            "",
+            None,
+            "{property: x|y|scale_x|scale_y|rotation|skew|alpha|brightness|tint (amount)|tint_red|tint_green|tint_blue (0..255)|red_multiplier|green_multiplier|blue_multiplier|alpha_multiplier (%)|red_offset|green_offset|blue_offset|alpha_offset (-255..255), value (px, %, °), frame?, layer?} (colour properties of several styles compose into Advanced, ADR 0056)",
+            true,
+            set_key as crate::RunFn,
+        ),
         c("motion.remove_key", "Remove Property Keyframe", "", None, "{property? (default: every property), frame?, layer?}", true, remove_key),
-        c("motion.set_ease", "Property Ease", "", None, "{easing, property? (default: every property), frame? (inside the segment), layer?}", true, set_ease),
-        c("motion.info", "Motion Tween", "", None, "{layer?, frame?} → the span's properties, keys, eases and values at the frame, its motion path, its anchors pinned to frames (pins) and where the object is", false, info),
-        c("motion.set_path", "Edit Motion Path", "", None, "{d: SVG path data in stage space (its first subpath; ends are the start and end positions), layer?, frame?}", true, set_path),
+        c(
+            "motion.set_ease",
+            "Property Ease",
+            "",
+            None,
+            "{easing, property? (default: every property), frame? (inside the segment), layer?}",
+            true,
+            set_ease,
+        ),
+        c(
+            "motion.info",
+            "Motion Tween",
+            "",
+            None,
+            "{layer?, frame?} → the span's properties, keys, eases and values at the frame, its motion path, its anchors pinned to frames (pins) and where the object is",
+            false,
+            info,
+        ),
+        c(
+            "motion.set_path",
+            "Edit Motion Path",
+            "",
+            None,
+            "{d: SVG path data in stage space (its first subpath; ends are the start and end positions), layer?, frame?}",
+            true,
+            set_path,
+        ),
         c("motion.clear_path", "Remove Motion Path", "", None, "{layer?, frame?}: back to the straight path the X/Y curves trace", true, clear_path),
         c("motion.orient", "Orient to Path", "", None, "{orient: bool, layer?, frame?}: turn the object as its motion path turns", true, orient),
-        c("motion.add_point", "Add Motion Path Point", "", None, "{x, y, slop? (stage units, default 4) | segment, t (0..1), layer?, frame?}: an anchor on the motion path, its shape unchanged → {anchor}", true, add_point),
-        c("motion.delete_points", "Delete Motion Path Points", "", None, "{anchors: [index, ..] (as motion.info lists them; the ends stay), layer?, frame?}: the path refits through the rest", true, delete_points),
-        c("motion.convert_point", "Convert Motion Path Point", "", None, "{anchor, smooth: bool, layer?, frame?}: smooth (handles in line) or corner (handles on the anchor)", true, convert_point),
-        c("motion.move_path", "Move Motion Path", "", None, "{dx, dy, layer?, frame?}: the whole path with its object, keeping the timing", true, move_path),
-        c("motion.pin_point", "Pin Motion Path Point", "", None, "{anchor? (default: a new anchor where the object is), frame? (the frame to pin it to, between the first and last position keys), layer?}: the object passes the anchor exactly on that frame → {anchor, frame, pins}", true, pin_point),
-        c("motion.unpin_point", "Unpin Motion Path Point", "", None, "{anchor? | frame?, layer?}: the anchor shapes the path only again; the X/Y keys of its frame go → {anchor, frame, pins}", true, unpin_point),
+        c(
+            "motion.add_point",
+            "Add Motion Path Point",
+            "",
+            None,
+            "{x, y, slop? (stage units, default 4) | segment, t (0..1), layer?, frame?}: an anchor on the motion path, its shape unchanged → {anchor}",
+            true,
+            add_point,
+        ),
+        c(
+            "motion.delete_points",
+            "Delete Motion Path Points",
+            "",
+            None,
+            "{anchors: [index, ..] (as motion.info lists them; the ends stay), layer?, frame?}: the path refits through the rest",
+            true,
+            delete_points,
+        ),
+        c(
+            "motion.convert_point",
+            "Convert Motion Path Point",
+            "",
+            None,
+            "{anchor, smooth: bool, layer?, frame?}: smooth (handles in line) or corner (handles on the anchor)",
+            true,
+            convert_point,
+        ),
+        c(
+            "motion.move_path",
+            "Move Motion Path",
+            "",
+            None,
+            "{dx, dy, layer?, frame?}: the whole path with its object, keeping the timing",
+            true,
+            move_path,
+        ),
+        c(
+            "motion.pin_point",
+            "Pin Motion Path Point",
+            "",
+            None,
+            "{anchor? (default: a new anchor where the object is), frame? (the frame to pin it to, between the first and last position keys), layer?}: the object passes the anchor exactly on that frame → {anchor, frame, pins}",
+            true,
+            pin_point,
+        ),
+        c(
+            "motion.unpin_point",
+            "Unpin Motion Path Point",
+            "",
+            None,
+            "{anchor? | frame?, layer?}: the anchor shapes the path only again; the X/Y keys of its frame go → {anchor, frame, pins}",
+            true,
+            unpin_point,
+        ),
     ]
 }
 
@@ -193,7 +273,12 @@ fn move_on_path(m: &mut MotionTween, base: &Props, offset: u32, d: Vec2, last: u
 
 /// The motion tween's object values (its base) on `kf`.
 fn base_of(kf: &Keyframe) -> Result<Props> {
-    kf.motion.as_ref().and_then(|m| m.target_index(&kf.elements)).and_then(|i| kf.elements.get(i)).map(|e| Props::of(e)).ok_or_else(|| EngineError::State("the motion tween's object is no longer on its keyframe".into()))
+    kf.motion
+        .as_ref()
+        .and_then(|m| m.target_index(&kf.elements))
+        .and_then(|i| kf.elements.get(i))
+        .map(|e| Props::of(e))
+        .ok_or_else(|| EngineError::State("the motion tween's object is no longer on its keyframe".into()))
 }
 
 fn set_path(s: &mut Session, p: &Value) -> Result<Value> {
@@ -252,7 +337,9 @@ fn edit_path<T>(s: &mut Session, p: &Value, edit: impl FnOnce(&mut MotionTween) 
     let (start, last) = (kf.start, kf.duration.saturating_sub(1));
     let m = kf.motion.as_mut().ok_or_else(|| EngineError::State("no motion tween here".into()))?;
     if m.path.is_none() {
-        let (path, pins) = m.path_and_pins_from_tracks(&base).ok_or_else(|| EngineError::State("the object doesn't move yet, so it has no path: move it at a later frame of the tween first".into()))?;
+        let (path, pins) = m.path_and_pins_from_tracks(&base).ok_or_else(|| {
+            EngineError::State("the object doesn't move yet, so it has no path: move it at a later frame of the tween first".into())
+        })?;
         m.path = Some(path);
         m.pins = pins;
     }
@@ -273,7 +360,10 @@ fn path_mut(m: &mut MotionTween) -> Result<&mut anicraft_geom::Path> {
 fn anchor_index(p: &Value, key: &str, path: &anicraft_geom::Path) -> Result<usize> {
     let i = opt_u64(p, key)?.ok_or_else(|| EngineError::Param(format!("param '{key}' is required")))?;
     let n = path.cmds.len();
-    usize::try_from(i).ok().filter(|i| *i < n).ok_or_else(|| EngineError::Param(format!("no anchor {i} on this motion path (it has {n}, from 0 at the start)")))
+    usize::try_from(i)
+        .ok()
+        .filter(|i| *i < n)
+        .ok_or_else(|| EngineError::Param(format!("no anchor {i} on this motion path (it has {n}, from 0 at the start)")))
 }
 
 /// Where `motion.add_point` adds: near a stage point, or at a curve parameter of a segment.
@@ -285,7 +375,10 @@ enum PointAt {
 fn add_point(s: &mut Session, p: &Value) -> Result<Value> {
     let at = match (opt_f32(p, "x")?, opt_f32(p, "y")?, opt_u64(p, "segment")?) {
         (Some(x), Some(y), None) => PointAt::Near(Vec2::new(x, y)),
-        (None, None, Some(seg)) => PointAt::On(usize::try_from(seg).unwrap_or(usize::MAX), opt_f32(p, "t")?.ok_or_else(|| EngineError::Param("param 't' is required with 'segment' (0..1 along it)".into()))?),
+        (None, None, Some(seg)) => PointAt::On(
+            usize::try_from(seg).unwrap_or(usize::MAX),
+            opt_f32(p, "t")?.ok_or_else(|| EngineError::Param("param 't' is required with 'segment' (0..1 along it)".into()))?,
+        ),
         _ => return Err(EngineError::Param("give either x and y (a point on the path) or segment and t".into())),
     };
     let slop = opt_f32(p, "slop")?.unwrap_or(4.0);
@@ -299,7 +392,8 @@ fn add_point(s: &mut Session, p: &Value) -> Result<Value> {
         }
         let (cmd, t) = match at {
             PointAt::Near(q) => {
-                let (cmd, t, dist) = path.nearest_segment(q, &Affine::IDENTITY).ok_or_else(|| EngineError::State("the motion path has no segments".into()))?;
+                let (cmd, t, dist) =
+                    path.nearest_segment(q, &Affine::IDENTITY).ok_or_else(|| EngineError::State("the motion path has no segments".into()))?;
                 if dist > slop {
                     return Err(EngineError::State(format!("({}, {}) is not on the motion path ({dist:.1} px away)", q.x, q.y)));
                 }
@@ -384,7 +478,11 @@ fn move_path(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let (kf, _) = motion_span(s, p)?;
     let start = kf.start;
-    let i = kf.motion.as_ref().and_then(|m| m.target_index(&kf.elements)).ok_or_else(|| EngineError::State("the motion tween's object is no longer on its keyframe".into()))?;
+    let i = kf
+        .motion
+        .as_ref()
+        .and_then(|m| m.target_index(&kf.elements))
+        .ok_or_else(|| EngineError::State("the motion tween's object is no longer on its keyframe".into()))?;
     let m = kf.motion.as_mut().ok_or_else(|| EngineError::State("no motion tween here".into()))?;
     if !m.translate(d) {
         return Err(EngineError::Param("that would move the motion path beyond ±1000000 px".into()));
@@ -424,7 +522,9 @@ fn orient(s: &mut Session, p: &Value) -> Result<Value> {
     // The straight path the X/Y curves trace becomes the path to turn along.
     let mut created = false;
     if on && m.path.is_none() {
-        let path = m.path_from_tracks(&base).ok_or_else(|| EngineError::State("the object doesn't move yet: move it at a later frame of the tween first, then it can turn with its path".into()))?;
+        let path = m.path_from_tracks(&base).ok_or_else(|| {
+            EngineError::State("the object doesn't move yet: move it at a later frame of the tween first, then it can turn with its path".into())
+        })?;
         created = m.set_path(&path, &base, last);
     }
     m.orient = on;
@@ -440,10 +540,24 @@ fn pin_error(e: PinError, start: u32, frame: u32) -> EngineError {
     match e {
         PinError::NoPath => EngineError::State("the object doesn't move yet, so it has no path: move it at a later frame of the tween first".into()),
         PinError::NoAnchor => EngineError::Param("no such anchor on this motion path (motion.info lists them, from 0 at the start)".into()),
-        PinError::End => EngineError::State("the ends of a motion path are always pinned, to the first and last position keys: move the object on those frames to move them".into()),
-        PinError::Outside(f0, f1) => EngineError::State(format!("frame {} is outside the motion (frames {} to {}): move the object there to carry the path on", shown(frame), shown(f0), shown(f1))),
-        PinError::Order(q) => EngineError::State(format!("anchor {} is pinned to frame {}: pins keep the path's order, a later frame on a later anchor", q.anchor, shown(q.frame))),
-        PinError::OffPath => EngineError::State(format!("at frame {} the object is beyond an end of the path (its ease overshoots): pin an anchor of the path instead", shown(frame))),
+        PinError::End => EngineError::State(
+            "the ends of a motion path are always pinned, to the first and last position keys: move the object on those frames to move them".into(),
+        ),
+        PinError::Outside(f0, f1) => EngineError::State(format!(
+            "frame {} is outside the motion (frames {} to {}): move the object there to carry the path on",
+            shown(frame),
+            shown(f0),
+            shown(f1)
+        )),
+        PinError::Order(q) => EngineError::State(format!(
+            "anchor {} is pinned to frame {}: pins keep the path's order, a later frame on a later anchor",
+            q.anchor,
+            shown(q.frame)
+        )),
+        PinError::OffPath => EngineError::State(format!(
+            "at frame {} the object is beyond an end of the path (its ease overshoots): pin an anchor of the path instead",
+            shown(frame)
+        )),
         PinError::Full => EngineError::State(format!("a motion path holds at most {} segments", anicraft_doc::motion::MAX_PATH_SEGMENTS)),
     }
 }
@@ -557,7 +671,9 @@ pub(crate) fn create(s: &mut Session, p: &Value) -> Result<Value> {
             return Err(EngineError::State("a folder holds layers, not frames; pick a layer inside it".into()));
         }
         if layer.kind == LayerKind::Armature {
-            return Err(EngineError::State("an armature layer tweens its poses: add a pose at another frame and Create Classic Tween between them".into()));
+            return Err(EngineError::State(
+                "an armature layer tweens its poses: add a pose at another frame and Create Classic Tween between them".into(),
+            ));
         }
         let k = layer.keyframe_at(frame).ok_or_else(|| EngineError::State(format!("frame {} is empty on this layer", frame + 1)))?;
         if let Some(m) = &k.motion {
@@ -619,7 +735,10 @@ fn motion_span<'a>(s: &'a mut Session, p: &Value) -> Result<(&'a mut Keyframe, u
     let i = layer.keyframe_index_at(frame).ok_or_else(|| EngineError::State(format!("frame {} is empty on this layer", frame + 1)))?;
     let kf = layer.keyframe_mut(i).ok_or_else(|| EngineError::State("keyframe vanished".into()))?;
     if kf.motion.is_none() {
-        return Err(EngineError::State(format!("frame {} is not in a motion tween; select the span and use Insert › Create Motion Tween", frame + 1)));
+        return Err(EngineError::State(format!(
+            "frame {} is not in a motion tween; select the span and use Insert › Create Motion Tween",
+            frame + 1
+        )));
     }
     let offset = frame - kf.start;
     Ok((kf, offset))
@@ -649,7 +768,10 @@ fn set_key(s: &mut Session, p: &Value) -> Result<Value> {
     let m = kf.motion.as_mut().ok_or_else(|| EngineError::State("no motion tween here".into()))?;
     // On a path, the X/Y keys of a pinned frame are its anchor's place: setting one moves the
     // anchor (ADR 0049).
-    let pinned = matches!(prop, Property::X | Property::Y).then(|| m.pinned_anchors(&base).into_iter().find(|q| q.frame == offset)).flatten().filter(|_| m.path.is_some());
+    let pinned = matches!(prop, Property::X | Property::Y)
+        .then(|| m.pinned_anchors(&base).into_iter().find(|q| q.frame == offset))
+        .flatten()
+        .filter(|_| m.path.is_some());
     if let Some(pin) = pinned {
         let at = m.path.as_ref().and_then(|p| p.point(pin.anchor as usize, anicraft_geom::edit::ANCHOR)).unwrap_or_default();
         let d = if prop == Property::X { Vec2::new(value - at.x, 0.0) } else { Vec2::new(0.0, value - at.y) };
@@ -669,7 +791,8 @@ fn remove_key(s: &mut Session, p: &Value) -> Result<Value> {
     let m = kf.motion.as_mut().ok_or_else(|| EngineError::State("no motion tween here".into()))?;
     // Removing a pinned frame's X or Y key lets the pin go, with both keys (ADR 0049).
     let pin = m.live_pins().into_iter().find(|q| q.frame == offset).filter(|_| only.is_none_or(|o| matches!(o, Property::X | Property::Y)));
-    let mut removed: Vec<&str> = Property::ALL.into_iter().filter(|x| only.is_none_or(|o| o == *x)).filter(|x| m.remove_key(*x, offset)).map(Property::key).collect();
+    let mut removed: Vec<&str> =
+        Property::ALL.into_iter().filter(|x| only.is_none_or(|o| o == *x)).filter(|x| m.remove_key(*x, offset)).map(Property::key).collect();
     if pin.is_some() {
         for k in [Property::X.key(), Property::Y.key()] {
             if !removed.contains(&k) {
@@ -697,7 +820,11 @@ fn set_ease(s: &mut Session, p: &Value) -> Result<Value> {
         }
     }
     if set.is_empty() {
-        return Err(EngineError::State(format!("frame {} is not between two property keyframes{}", start + offset + 1, only.map_or_else(String::new, |o| format!(" of {}", o.label())))));
+        return Err(EngineError::State(format!(
+            "frame {} is not between two property keyframes{}",
+            start + offset + 1,
+            only.map_or_else(String::new, |o| format!(" of {}", o.label()))
+        )));
     }
     Ok(json!({"easing": easing.label(), "properties": set}))
 }
@@ -714,17 +841,32 @@ fn info(s: &mut Session, p: &Value) -> Result<Value> {
         .tracks
         .iter()
         .map(|t| {
-            let keys: Vec<Value> = t.keys.iter().map(|k| json!({"frame": kf.start + k.frame, "value": k.value, "ease": k.ease.label(), "bezier": k.ease.as_bezier()})).collect();
+            let keys: Vec<Value> = t
+                .keys
+                .iter()
+                .map(|k| json!({"frame": kf.start + k.frame, "value": k.value, "ease": k.ease.label(), "bezier": k.ease.as_bezier()}))
+                .collect();
             json!({"property": t.property.key(), "label": t.property.label(), "unit": t.property.unit(), "keys": keys})
         })
         .collect();
     let values: serde_json::Map<String, Value> = Property::ALL.iter().filter_map(|p| now.map(|n| (p.key().to_string(), json!(n.get(*p))))).collect();
     // Where the object is (on a motion path the X/Y values are its timing, not its place).
-    let position = m.target_index(&kf.elements).and_then(|i| kf.elements.get(i)).map(|e| m.apply(e, (frame - kf.start) as f32).transform.translation()).map(|q| json!([q.x, q.y]));
+    let position = m
+        .target_index(&kf.elements)
+        .and_then(|i| kf.elements.get(i))
+        .map(|e| m.apply(e, (frame - kf.start) as f32).transform.translation())
+        .map(|q| json!([q.x, q.y]));
     let path = m.path.as_ref().map(|p| p.to_svg());
     // The anchors point edits address: the path's own, or the straight path's (ADR 0038).
-    let anchors: Vec<[f32; 2]> = m.path.clone().or_else(|| base.and_then(|b| m.path_from_tracks(&b))).map(|p| p.anchors().into_iter().map(|(_, q)| [q.x, q.y]).collect()).unwrap_or_default();
+    let anchors: Vec<[f32; 2]> = m
+        .path
+        .clone()
+        .or_else(|| base.and_then(|b| m.path_from_tracks(&b)))
+        .map(|p| p.anchors().into_iter().map(|(_, q)| [q.x, q.y]).collect())
+        .unwrap_or_default();
     // And those tied to frames, ends included (ADR 0049).
     let pins = base.map_or(Value::Array(Vec::new()), |b| pins_json(m, kf.start, &b));
-    Ok(json!({"layer": lid.0, "start": kf.start, "frames": kf.duration, "target": m.target.0, "tracks": tracks, "values": values, "position": position, "path": path, "anchors": anchors, "pins": pins, "orient": m.orient}))
+    Ok(
+        json!({"layer": lid.0, "start": kf.start, "frames": kf.duration, "target": m.target.0, "tracks": tracks, "values": values, "position": position, "path": path, "anchors": anchors, "pins": pins, "orient": m.orient}),
+    )
 }
