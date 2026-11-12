@@ -66,13 +66,25 @@ pub fn to_svg(dl: &DisplayList, stage: &Stage) -> String {
             let style = match dl.groups.get(g as usize).map(|x| x.blend) {
                 // CSS has these; Layer is the isolated group itself. The rest have no SVG
                 // equivalent and draw normally.
-                Some(m @ (anicraft_doc::BlendMode::Multiply | anicraft_doc::BlendMode::Screen | anicraft_doc::BlendMode::Overlay | anicraft_doc::BlendMode::Darken | anicraft_doc::BlendMode::Lighten | anicraft_doc::BlendMode::HardLight | anicraft_doc::BlendMode::Difference)) => {
+                Some(
+                    m @ (anicraft_doc::BlendMode::Multiply
+                    | anicraft_doc::BlendMode::Screen
+                    | anicraft_doc::BlendMode::Overlay
+                    | anicraft_doc::BlendMode::Darken
+                    | anicraft_doc::BlendMode::Lighten
+                    | anicraft_doc::BlendMode::HardLight
+                    | anicraft_doc::BlendMode::Difference),
+                ) => {
                     format!(" style=\"mix-blend-mode:{}\"", if m == anicraft_doc::BlendMode::HardLight { "hard-light" } else { m.key() })
                 }
                 Some(anicraft_doc::BlendMode::Add) => " style=\"mix-blend-mode:plus-lighter\"".to_string(),
                 _ => String::new(),
             };
-            let filter = dl.groups.get(g as usize).and_then(|x| svg_filter(&x.filters, (w, h), &mut defs, &mut grad)).map_or_else(String::new, |id| format!(" filter=\"url(#{id})\""));
+            let filter = dl
+                .groups
+                .get(g as usize)
+                .and_then(|x| svg_filter(&x.filters, (w, h), &mut defs, &mut grad))
+                .map_or_else(String::new, |id| format!(" filter=\"url(#{id})\""));
             let _ = write!(body, "<g opacity=\"{}\"{style}{filter}>", num(a));
             open.push(g);
         }
@@ -83,7 +95,8 @@ pub fn to_svg(dl: &DisplayList, stage: &Stage) -> String {
             continue;
         }
         if let Some(fill) = &item.fill
-            && let Some(paint) = paint_attr(fill, &item.transform, &item.color, &mut defs, &mut grad, item.image.as_ref().map(|px| (px, item.smooth)), &mut images)
+            && let Some(paint) =
+                paint_attr(fill, &item.transform, &item.color, &mut defs, &mut grad, item.image.as_ref().map(|px| (px, item.smooth)), &mut images)
         {
             let _ = write!(body, "<path d=\"{d}\"{paint}{}{clip}/>", rule_attr("fill-rule", item.fill_rule));
         }
@@ -202,7 +215,14 @@ fn svg_filter(filters: &[anicraft_doc::Filter], stage: (u32, u32), defs: &mut St
                 );
             }
             Filter::Glow { blur_x, blur_y, strength, quality, color, inner: false, knockout: false } => {
-                let _ = write!(prims, "<feDropShadow dx=\"0\" dy=\"0\" stdDeviation=\"{} {}\" flood-color=\"{}\" flood-opacity=\"{}\"/>", num(sigma(blur_x, quality)), num(sigma(blur_y, quality)), hex(color), num((color.a * strength).clamp(0.0, 1.0)));
+                let _ = write!(
+                    prims,
+                    "<feDropShadow dx=\"0\" dy=\"0\" stdDeviation=\"{} {}\" flood-color=\"{}\" flood-opacity=\"{}\"/>",
+                    num(sigma(blur_x, quality)),
+                    num(sigma(blur_y, quality)),
+                    hex(color),
+                    num((color.a * strength).clamp(0.0, 1.0))
+                );
             }
             Filter::AdjustColor { brightness, contrast, saturation, hue } => {
                 let m = crate::filters::color_matrix(brightness, contrast, saturation, hue);
@@ -254,7 +274,9 @@ fn effect_svg(f: &anicraft_doc::Filter, i: usize, prims: &mut String) {
     let (blur_x, blur_y, strength, quality, angle, distance, side, knockout) = match f {
         Filter::Bevel { blur_x, blur_y, strength, quality, angle, distance, side, knockout, .. }
         | Filter::GradientGlow { blur_x, blur_y, strength, quality, angle, distance, side, knockout, .. }
-        | Filter::GradientBevel { blur_x, blur_y, strength, quality, angle, distance, side, knockout, .. } => (*blur_x, *blur_y, *strength, *quality, *angle, *distance, *side, *knockout),
+        | Filter::GradientBevel { blur_x, blur_y, strength, quality, angle, distance, side, knockout, .. } => {
+            (*blur_x, *blur_y, *strength, *quality, *angle, *distance, *side, *knockout)
+        }
         _ => return,
     };
     let a = angle.to_radians();
@@ -263,12 +285,17 @@ fn effect_svg(f: &anicraft_doc::Filter, i: usize, prims: &mut String) {
     let blur = format!("stdDeviation=\"{} {}\"", num(sigma(blur_x, quality)), num(sigma(blur_y, quality)));
     let s = num(strength);
     // The input, and its opacity alone.
-    let _ = write!(prims, "<feOffset result=\"k{i}\"/><feColorMatrix in=\"k{i}\" type=\"matrix\" values=\"0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0\" result=\"a{i}\"/>");
+    let _ = write!(
+        prims,
+        "<feOffset result=\"k{i}\"/><feColorMatrix in=\"k{i}\" type=\"matrix\" values=\"0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0\" result=\"a{i}\"/>"
+    );
     // `stops` over the opacity of `from`, into `to`: opaque ramp colours from tables, cut by
     // the ramp's own opacity.
     let ramp = |prims: &mut String, stops: &[anicraft_doc::GradientStop], from: &str, to: &str| {
         // As many samples as the renderer's ramp table, so narrow stops come across.
-        let table = |ch: fn(anicraft_doc::Rgba) -> f32| (0..=RAMP_SAMPLES).map(|j| num(ch(anicraft_doc::ramp_at(stops, j as f32 / RAMP_SAMPLES as f32)))).collect::<Vec<_>>().join(" ");
+        let table = |ch: fn(anicraft_doc::Rgba) -> f32| {
+            (0..=RAMP_SAMPLES).map(|j| num(ch(anicraft_doc::ramp_at(stops, j as f32 / RAMP_SAMPLES as f32)))).collect::<Vec<_>>().join(" ")
+        };
         let _ = write!(
             prims,
             "<feColorMatrix in=\"{from}\" type=\"matrix\" values=\"0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 1\" result=\"{to}g\"/>\
@@ -283,7 +310,10 @@ fn effect_svg(f: &anicraft_doc::Filter, i: usize, prims: &mut String) {
     };
     // Both bevels: the blurred opacity towards the light (l) and away from it (d).
     let bevel_offsets = |prims: &mut String| {
-        let _ = write!(prims, "<feGaussianBlur in=\"a{i}\" {blur} result=\"b{i}\"/><feOffset in=\"b{i}\" dx=\"{ndx}\" dy=\"{ndy}\" result=\"l{i}\"/><feOffset in=\"b{i}\" dx=\"{dx}\" dy=\"{dy}\" result=\"d{i}\"/>");
+        let _ = write!(
+            prims,
+            "<feGaussianBlur in=\"a{i}\" {blur} result=\"b{i}\"/><feOffset in=\"b{i}\" dx=\"{ndx}\" dy=\"{ndy}\" result=\"l{i}\"/><feOffset in=\"b{i}\" dx=\"{dx}\" dy=\"{dy}\" result=\"d{i}\"/>"
+        );
     };
     let (inner, outer) = match f {
         Filter::Bevel { shadow_color, highlight_color, .. } => {
@@ -305,18 +335,27 @@ fn effect_svg(f: &anicraft_doc::Filter, i: usize, prims: &mut String) {
             // The ramp position: 0.5 − strength × (towards − away) / 2.
             bevel_offsets(prims);
             let half = num(strength * 0.5);
-            let _ = write!(prims, "<feComposite in=\"l{i}\" in2=\"d{i}\" operator=\"arithmetic\" k2=\"-{half}\" k3=\"{half}\" k4=\"0.5\" result=\"t{i}\"/>");
+            let _ = write!(
+                prims,
+                "<feComposite in=\"l{i}\" in2=\"d{i}\" operator=\"arithmetic\" k2=\"-{half}\" k3=\"{half}\" k4=\"0.5\" result=\"t{i}\"/>"
+            );
             ramp(prims, stops, &format!("t{i}"), &format!("e{i}"));
             (format!("e{i}"), format!("e{i}"))
         }
         Filter::GradientGlow { stops, .. } => {
             // Intensity: the blurred opacity (outside) or transparency (inside), offset.
             let glow = |prims: &mut String, src: &str, to: &str| {
-                let _ = write!(prims, "<feGaussianBlur in=\"{src}\" {blur}/><feOffset dx=\"{dx}\" dy=\"{dy}\"/><feComposite operator=\"arithmetic\" k2=\"{s}\" result=\"{to}t\"/>");
+                let _ = write!(
+                    prims,
+                    "<feGaussianBlur in=\"{src}\" {blur}/><feOffset dx=\"{dx}\" dy=\"{dy}\"/><feComposite operator=\"arithmetic\" k2=\"{s}\" result=\"{to}t\"/>"
+                );
                 ramp(prims, stops, &format!("{to}t"), to);
             };
             if side != FilterSide::Outer {
-                let _ = write!(prims, "<feComponentTransfer in=\"a{i}\" result=\"v{i}\"><feFuncA type=\"table\" tableValues=\"1 0\"/></feComponentTransfer>");
+                let _ = write!(
+                    prims,
+                    "<feComponentTransfer in=\"a{i}\" result=\"v{i}\"><feFuncA type=\"table\" tableValues=\"1 0\"/></feComponentTransfer>"
+                );
                 glow(prims, &format!("v{i}"), &format!("ei{i}"));
             }
             if side != FilterSide::Inner {
@@ -331,7 +370,10 @@ fn effect_svg(f: &anicraft_doc::Filter, i: usize, prims: &mut String) {
         (FilterSide::Inner, true) => write!(prims, "<feComposite in=\"{inner}\" in2=\"k{i}\" operator=\"in\"/>"),
         (FilterSide::Outer, false) => write!(prims, "<feComposite in=\"k{i}\" in2=\"{outer}\" operator=\"over\"/>"),
         (FilterSide::Outer, true) => write!(prims, "<feComposite in=\"{outer}\" in2=\"k{i}\" operator=\"out\"/>"),
-        (FilterSide::Full, false) => write!(prims, "<feComposite in=\"{inner}\" in2=\"k{i}\" operator=\"atop\" result=\"x{i}\"/><feComposite in=\"x{i}\" in2=\"{outer}\" operator=\"over\"/>"),
+        (FilterSide::Full, false) => write!(
+            prims,
+            "<feComposite in=\"{inner}\" in2=\"k{i}\" operator=\"atop\" result=\"x{i}\"/><feComposite in=\"x{i}\" in2=\"{outer}\" operator=\"over\"/>"
+        ),
         (FilterSide::Full, true) => write!(
             prims,
             "<feComposite in=\"{inner}\" in2=\"k{i}\" operator=\"in\" result=\"x{i}\"/><feComposite in=\"{outer}\" in2=\"k{i}\" operator=\"out\" result=\"y{i}\"/><feComposite in=\"x{i}\" in2=\"y{i}\" operator=\"arithmetic\" k2=\"1\" k3=\"1\"/>"
@@ -341,7 +383,15 @@ fn effect_svg(f: &anicraft_doc::Filter, i: usize, prims: &mut String) {
 
 /// The fill attribute for `paint`, defining a gradient in `defs` when needed. `None` when the
 /// paint draws nothing.
-fn paint_attr(paint: &Paint, xf: &Affine, fx: &ColorTransform, defs: &mut String, n: &mut usize, image: Option<(&std::sync::Arc<anicraft_doc::Pixels>, bool)>, images: &mut Vec<(usize, bool, String)>) -> Option<String> {
+fn paint_attr(
+    paint: &Paint,
+    xf: &Affine,
+    fx: &ColorTransform,
+    defs: &mut String,
+    n: &mut usize,
+    image: Option<(&std::sync::Arc<anicraft_doc::Pixels>, bool)>,
+    images: &mut Vec<(usize, bool, String)>,
+) -> Option<String> {
     let stops = match paint {
         Paint::Solid(c) => {
             let c = fx.apply(*c).sanitized();
@@ -360,7 +410,13 @@ fn paint_attr(paint: &Paint, xf: &Affine, fx: &ColorTransform, defs: &mut String
                     let png = crate::encode_png(px.width, px.height, &px.rgba).ok()?;
                     let id = format!("img{}", images.len());
                     let look = if smooth { "" } else { " image-rendering=\"pixelated\"" };
-                    let _ = write!(defs, "<image id=\"{id}\" width=\"{}\" height=\"{}\"{look} href=\"data:image/png;base64,{}\"/>", px.width, px.height, anicraft_doc::base64_encode(&png));
+                    let _ = write!(
+                        defs,
+                        "<image id=\"{id}\" width=\"{}\" height=\"{}\"{look} href=\"data:image/png;base64,{}\"/>",
+                        px.width,
+                        px.height,
+                        anicraft_doc::base64_encode(&png)
+                    );
                     images.push((key, smooth, id.clone()));
                     id
                 }
@@ -417,10 +473,25 @@ fn paint_attr(paint: &Paint, xf: &Affine, fx: &ColorTransform, defs: &mut String
     let id = format!("g{n}");
     *n += 1;
     let m = xf.m;
-    let gt = format!(" gradientUnits=\"userSpaceOnUse\" gradientTransform=\"matrix({} {} {} {} {} {})\"", num(m[0]), num(m[1]), num(m[2]), num(m[3]), num(m[4]), num(m[5]));
+    let gt = format!(
+        " gradientUnits=\"userSpaceOnUse\" gradientTransform=\"matrix({} {} {} {} {} {})\"",
+        num(m[0]),
+        num(m[1]),
+        num(m[2]),
+        num(m[3]),
+        num(m[4]),
+        num(m[5])
+    );
     match paint {
         Paint::Linear { start, end, .. } => {
-            let _ = write!(defs, "<linearGradient id=\"{id}\"{gt} x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\">", num(start.x), num(start.y), num(end.x), num(end.y));
+            let _ = write!(
+                defs,
+                "<linearGradient id=\"{id}\"{gt} x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\">",
+                num(start.x),
+                num(start.y),
+                num(end.x),
+                num(end.y)
+            );
         }
         Paint::Radial { center, radius, .. } => {
             let _ = write!(defs, "<radialGradient id=\"{id}\"{gt} cx=\"{}\" cy=\"{}\" r=\"{}\">", num(center.x), num(center.y), num(radius.max(0.0)));
@@ -474,7 +545,8 @@ mod tests {
     fn bitmaps_take_colour_effects_as_a_colour_matrix() {
         // ADR 0056: alpha alone is fill-opacity; anything more is an feColorMatrix on the image.
         let px = Arc::new(anicraft_doc::Pixels { width: 1, height: 1, rgba: vec![10, 20, 30, 255] });
-        let mut b = item(Path::rect(0.0, 0.0, 10.0, 10.0), Some(Paint::Bitmap { bitmap: anicraft_doc::BitmapId(1), repeat: true, matrix: Affine::IDENTITY }));
+        let mut b =
+            item(Path::rect(0.0, 0.0, 10.0, 10.0), Some(Paint::Bitmap { bitmap: anicraft_doc::BitmapId(1), repeat: true, matrix: Affine::IDENTITY }));
         b.image = Some(px);
         b.color = ColorTransform::alpha(0.5);
         let svg = to_svg(&DisplayList { items: vec![b.clone()], ..Default::default() }, &stage());
@@ -514,9 +586,19 @@ mod tests {
         assert!(svg.contains("stroke-width=\"6\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>"), "{svg}");
         assert!(!svg.contains("dasharray") && !svg.contains("miterlimit"));
         // Dashes, offset and the miter limit; lengths scale with the shape, like the width.
-        let dashed = StrokeStyle { cap: Cap::Butt, join: Join::Miter, miter_limit: 6.0, dash: Some(Dash::Dashed { lengths: vec![4.0, 1.5].into(), offset: 1.0 }) };
+        let dashed = StrokeStyle {
+            cap: Cap::Butt,
+            join: Join::Miter,
+            miter_limit: 6.0,
+            dash: Some(Dash::Dashed { lengths: vec![4.0, 1.5].into(), offset: 1.0 }),
+        };
         let svg = svg_of(Stroke::new(Rgba::BLACK, 3.0).with_style(dashed));
-        assert!(svg.contains("stroke-linejoin=\"miter\" stroke-linecap=\"butt\" stroke-miterlimit=\"6\" stroke-dasharray=\"8 3\" stroke-dashoffset=\"2\"/>"), "{svg}");
+        assert!(
+            svg.contains(
+                "stroke-linejoin=\"miter\" stroke-linecap=\"butt\" stroke-miterlimit=\"6\" stroke-dasharray=\"8 3\" stroke-dashoffset=\"2\"/>"
+            ),
+            "{svg}"
+        );
         // Dots: zero-length round dashes one width plus the spacing apart.
         let dotted = StrokeStyle { cap: Cap::Square, join: Join::Bevel, dash: Dash::dotted(2.0), ..StrokeStyle::default() };
         let svg = svg_of(Stroke::new(Rgba::BLACK, 3.0).with_style(dotted));
@@ -599,7 +681,14 @@ mod group_tests {
             image: None,
             smooth: true,
         };
-        let dl = DisplayList { items: vec![it(None), it(Some(0)), it(Some(1)), it(Some(0)), it(None)], clip_parents: vec![], groups: vec![Group { parent: None, alpha: 0.5, blend: Default::default(), filters: Default::default(), clip: None }, Group { parent: Some(0), alpha: 0.25, blend: Default::default(), filters: Default::default(), clip: None }] };
+        let dl = DisplayList {
+            items: vec![it(None), it(Some(0)), it(Some(1)), it(Some(0)), it(None)],
+            clip_parents: vec![],
+            groups: vec![
+                Group { parent: None, alpha: 0.5, blend: Default::default(), filters: Default::default(), clip: None },
+                Group { parent: Some(0), alpha: 0.25, blend: Default::default(), filters: Default::default(), clip: None },
+            ],
+        };
         let svg = to_svg(&dl, &Stage { width: 4, height: 4, fps: 24.0, background: Rgba::WHITE });
         assert!(svg.contains("<g opacity=\"0.5\">") && svg.contains("<g opacity=\"0.25\">"), "{svg}");
         assert_eq!(svg.matches("<g ").count(), svg.matches("</g>").count(), "balanced");

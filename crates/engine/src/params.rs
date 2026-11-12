@@ -136,7 +136,10 @@ pub fn opt_profile(p: &Value, key: &str) -> Result<Option<Option<WidthProfile>>>
                     _ => (None, None, None),
                 };
                 let (Some(t), Some(l), Some(r)) = (t, l, r) else { return Err(bad(key, want)) };
-                if !(0.0..=1.0).contains(&t) || !(0.0..=anicraft_doc::MAX_WIDTH_FACTOR).contains(&l) || !(0.0..=anicraft_doc::MAX_WIDTH_FACTOR).contains(&r) {
+                if !(0.0..=1.0).contains(&t)
+                    || !(0.0..=anicraft_doc::MAX_WIDTH_FACTOR).contains(&l)
+                    || !(0.0..=anicraft_doc::MAX_WIDTH_FACTOR).contains(&r)
+                {
                     return Err(bad(key, &format!("width points with t in 0..=1 and widths in 0..={}", anicraft_doc::MAX_WIDTH_FACTOR)));
                 }
                 pts.push(WidthPoint::new(t, l, r));

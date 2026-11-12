@@ -187,7 +187,11 @@ fn user_brushes_are_saved_listed_renamed_and_deleted() {
     assert_eq!((v["name"].as_str(), v["replaced"].as_bool()), (Some("Wet Ink"), Some(false)));
     let list = run(&mut s, "brush.preset_list", json!({}));
     let mine = &list["presets"][BUILTIN.len()];
-    assert_eq!((mine["name"].as_str(), mine["builtin"].as_bool(), mine["size"].as_f64(), mine["taper_end"].as_f64()), (Some("Wet Ink"), Some(false), Some(9.0), Some(18.0)), "from the ink pen, size changed");
+    assert_eq!(
+        (mine["name"].as_str(), mine["builtin"].as_bool(), mine["size"].as_f64(), mine["taper_end"].as_f64()),
+        (Some("Wet Ink"), Some(false), Some(9.0), Some(18.0)),
+        "from the ink pen, size changed"
+    );
     // Painting with it by name equals painting with its settings.
     run(&mut s, "draw.brush", json!({"points": wave(), "preset": "wet ink"}));
     let mut t = blank();

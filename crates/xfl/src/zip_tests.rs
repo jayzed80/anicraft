@@ -38,7 +38,11 @@ fn the_checksum_matches_the_published_check_value() {
 
 #[test]
 fn every_layout_a_writer_uses_reads_the_same() {
-    let files: std::collections::BTreeMap<String, Vec<u8>> = [("DOMDocument.xml", "<DOMDocument/>"), ("LIBRARY/Café/Ünïcödé ★.xml", "<DOMSymbolItem/>"), ("bin/M 1 1.dat", "data")].iter().map(|(p, b)| (p.to_string(), b.as_bytes().to_vec())).collect();
+    let files: std::collections::BTreeMap<String, Vec<u8>> =
+        [("DOMDocument.xml", "<DOMDocument/>"), ("LIBRARY/Café/Ünïcödé ★.xml", "<DOMSymbolItem/>"), ("bin/M 1 1.dat", "data")]
+            .iter()
+            .map(|(p, b)| (p.to_string(), b.as_bytes().to_vec()))
+            .collect();
     for v in pack::VARIANTS {
         let z = pack::pack(&files, v);
         let a = Archive::open(&z).unwrap_or_else(|e| panic!("{}: {e}", v.name));
@@ -188,7 +192,16 @@ fn the_archive_hands_out_at_most_its_budget() {
 
 #[test]
 fn unsafe_paths_are_refused() {
-    for name in ["../escape.xml", "LIBRARY/../../escape.xml", "/etc/passwd", "\\Windows\\win.ini", "C:\\Windows\\win.ini", "C:escape.xml", "LIBRARY\\..\\..\\x", "a\0b"] {
+    for name in [
+        "../escape.xml",
+        "LIBRARY/../../escape.xml",
+        "/etc/passwd",
+        "\\Windows\\win.ini",
+        "C:\\Windows\\win.ini",
+        "C:escape.xml",
+        "LIBRARY\\..\\..\\x",
+        "a\0b",
+    ] {
         let z = zip(&[("DOMDocument.xml", b"<DOMDocument/>", true), (name, b"x", false)]);
         assert!(matches!(Archive::open(&z).err(), Some(ZipError::Unsafe(_))), "{name:?}: {:?}", Archive::open(&z).err());
     }

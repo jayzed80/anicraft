@@ -109,7 +109,8 @@ fn palette_failures(name: &str, t: &crate::theme::Tokens) -> Vec<String> {
     need("on_fill on accent", t.on_fill, t.accent, 4.5);
     need("on_fill on danger", t.on_fill, t.danger, 4.5);
     // Marks on timeline blocks and the playhead's number; the blocks against the grid.
-    for (b, bg) in [("span", t.span), ("tween", t.tween), ("tween_shape", t.tween_shape), ("tween_motion", t.tween_motion), ("playhead", t.playhead)] {
+    for (b, bg) in [("span", t.span), ("tween", t.tween), ("tween_shape", t.tween_shape), ("tween_motion", t.tween_motion), ("playhead", t.playhead)]
+    {
         need(&format!("ink on {b}"), t.ink, bg, 4.5);
         need(&format!("{b} on panel"), bg, t.panel, 3.0);
     }

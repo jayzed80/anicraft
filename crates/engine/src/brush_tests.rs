@@ -173,7 +173,8 @@ fn paint_fills_leaves_lines() {
     let mut n = blank(false);
     run(&mut n, "draw.line", json!({"x0": 200, "y0": 50, "x1": 200, "y1": 250, "stroke": "#000000", "stroke_width": 4}));
     run(&mut n, "draw.brush", json!({"points": stroke(100.0, 150.0, 300.0, 150.0), "size": 30, "color": RED}));
-    let hidden = shapes(&n).iter().filter(|(sh, _)| sh.stroke.is_some()).all(|(sh, m)| !sh.path.bounds().transformed(m).contains(Vec2::new(200.0, 150.0)));
+    let hidden =
+        shapes(&n).iter().filter(|(sh, _)| sh.stroke.is_some()).all(|(sh, m)| !sh.path.bounds().transformed(m).contains(Vec2::new(200.0, 150.0)));
     assert!(hidden, "Paint Normal covers the line where it crosses it");
 }
 

@@ -103,7 +103,12 @@ impl Shaping {
     pub fn sanitized(self) -> Shaping {
         let c = |v: f32, hi: f32| if v.is_finite() { v.clamp(0.0, hi) } else { 0.0 };
         let spacing = c(self.spacing, 10.0);
-        Shaping { taper_start: c(self.taper_start, 0.5), taper_end: c(self.taper_end, 0.5), spacing: if spacing > 0.0 { spacing.max(0.05) } else { 0.0 }, jitter: c(self.jitter, 0.5) }
+        Shaping {
+            taper_start: c(self.taper_start, 0.5),
+            taper_end: c(self.taper_end, 0.5),
+            spacing: if spacing > 0.0 { spacing.max(0.05) } else { 0.0 },
+            jitter: c(self.jitter, 0.5),
+        }
     }
 
     /// The tapers' factor at fraction `u` of the stroke's length.
@@ -590,7 +595,10 @@ mod tests {
     #[test]
     fn crossing_strokes_leave_holes_and_ellipses_follow_the_angle() {
         // A loop that closes on itself leaves a hole in the middle.
-        let ring: Vec<Sample> = (0..=72).map(|i| i as f32 / 72.0 * std::f32::consts::TAU).map(|a| Sample { at: Vec2::new(100.0 * a.cos(), 100.0 * a.sin()), pressure: 1.0 }).collect();
+        let ring: Vec<Sample> = (0..=72)
+            .map(|i| i as f32 / 72.0 * std::f32::consts::TAU)
+            .map(|a| Sample { at: Vec2::new(100.0 * a.cos(), 100.0 * a.sin()), pressure: 1.0 })
+            .collect();
         let p = outline(&ring, &Tip::round(10.0), 0.5, 0.2);
         let loops = p.cmds.iter().filter(|c| matches!(c, PathCmd::MoveTo(_))).count();
         assert_eq!(loops, 2, "outer edge and hole");
@@ -609,7 +617,12 @@ mod tests {
         let cases = [((0.0, 0.0), 1.0, (10.0, 0.0), 3.0), ((0.0, 0.0), 2.0, (0.5, 0.5), 0.2), ((5.0, -3.0), 0.5, (-4.0, 6.0), 0.5)];
         for (a, ra, b, rb) in cases {
             for x in [(3.0, 4.0), (-2.0, 0.1), (12.0, -1.0), (0.2, 0.2), (5.0, 0.0)] {
-                let brute = |norm: fn(P) -> f64| (0..=4000).map(|i| i as f64 / 4000.0).map(|t| norm((x.0 - lerp(a, b, t).0, x.1 - lerp(a, b, t).1)) - (ra + (rb - ra) * t)).fold(f64::INFINITY, f64::min);
+                let brute = |norm: fn(P) -> f64| {
+                    (0..=4000)
+                        .map(|i| i as f64 / 4000.0)
+                        .map(|t| norm((x.0 - lerp(a, b, t).0, x.1 - lerp(a, b, t).1)) - (ra + (rb - ra) * t))
+                        .fold(f64::INFINITY, f64::min)
+                };
                 let r = round_dist(x, a, ra, b, rb);
                 let s = square_dist(x, a, ra, b, rb);
                 assert!((r - brute(|v| v.0.hypot(v.1))).abs() < 1e-3, "round {x:?}: {r}");
@@ -691,7 +704,13 @@ mod tests {
     fn hostile_input_is_empty_or_bounded() {
         let wild = Shaping { taper_start: f32::NAN, taper_end: 1e9, spacing: -3.0, jitter: f32::INFINITY };
         assert_eq!(wild.sanitized(), Shaping { taper_start: 0.0, taper_end: 0.5, spacing: 0.0, jitter: 0.0 });
-        let _ = outline_shaped(&line(Vec2::ZERO, Vec2::new(10.0, 0.0), 3, |_| 1.0), &Tip::round(5.0), &Shaping { spacing: 1e-9, jitter: 0.5, ..wild }, 1.0, 1.0);
+        let _ = outline_shaped(
+            &line(Vec2::ZERO, Vec2::new(10.0, 0.0), 3, |_| 1.0),
+            &Tip::round(5.0),
+            &Shaping { spacing: 1e-9, jitter: 0.5, ..wild },
+            1.0,
+            1.0,
+        );
         assert!(outline(&[], &Tip::round(10.0), 1.0, 1.0).is_empty());
         let nan = [Sample { at: Vec2::new(f32::NAN, 0.0), pressure: f32::NAN }];
         assert!(outline(&nan, &Tip::round(10.0), 1.0, 1.0).is_empty());

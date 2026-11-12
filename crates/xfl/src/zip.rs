@@ -146,7 +146,14 @@ pub fn crc32(data: &[u8]) -> u32 {
     let (blocks, rest) = data.as_chunks::<8>();
     for b in blocks {
         let lo = c ^ u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
-        c = t[7][(lo & 0xff) as usize] ^ t[6][((lo >> 8) & 0xff) as usize] ^ t[5][((lo >> 16) & 0xff) as usize] ^ t[4][(lo >> 24) as usize] ^ t[3][b[4] as usize] ^ t[2][b[5] as usize] ^ t[1][b[6] as usize] ^ t[0][b[7] as usize];
+        c = t[7][(lo & 0xff) as usize]
+            ^ t[6][((lo >> 8) & 0xff) as usize]
+            ^ t[5][((lo >> 16) & 0xff) as usize]
+            ^ t[4][(lo >> 24) as usize]
+            ^ t[3][b[4] as usize]
+            ^ t[2][b[5] as usize]
+            ^ t[1][b[6] as usize]
+            ^ t[0][b[7] as usize];
     }
     for &b in rest {
         c = t[0][((c ^ b as u32) & 0xff) as usize] ^ (c >> 8);
@@ -377,7 +384,11 @@ impl<'a> Archive<'a> {
         let out = match e.method {
             0 => raw.to_vec(),
             _ => miniz_oxide::inflate::decompress_to_vec_with_limit(raw, e.size.max(1)).map_err(|err| {
-                let why = if err.status == miniz_oxide::inflate::TINFLStatus::HasMoreOutput { "expands past the size it gives" } else { "has damaged compressed data" };
+                let why = if err.status == miniz_oxide::inflate::TINFLStatus::HasMoreOutput {
+                    "expands past the size it gives"
+                } else {
+                    "has damaged compressed data"
+                };
                 ZipError::DamagedEntry(name.into(), why)
             })?,
         };

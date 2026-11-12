@@ -11,13 +11,15 @@ use skrifa::MetadataProvider as _;
 use std::sync::{Arc, OnceLock};
 
 /// Families tried, in order, when none is asked for or the one asked for isn't installed.
-pub const DEFAULT_FAMILIES: &[&str] = &["Inter", "Arial", "Helvetica", "Helvetica Neue", "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans", "Roboto", "Ubuntu"];
+pub const DEFAULT_FAMILIES: &[&str] =
+    &["Inter", "Arial", "Helvetica", "Helvetica Neue", "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans", "Roboto", "Ubuntu"];
 
 /// Installed families tried for the device font `_serif`, in order.
 const SERIF_FAMILIES: &[&str] = &["Times New Roman", "Times", "Georgia", "DejaVu Serif", "Liberation Serif", "Noto Serif"];
 
 /// Installed families tried for the device font `_typewriter`, in order.
-const MONO_FAMILIES: &[&str] = &["Courier New", "Courier", "JetBrains Mono", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Consolas", "Menlo"];
+const MONO_FAMILIES: &[&str] =
+    &["Courier New", "Courier", "JetBrains Mono", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Consolas", "Menlo"];
 
 /// Largest text block laid out (characters).
 pub const MAX_CHARS: usize = 100_000;
@@ -50,7 +52,16 @@ pub struct Style {
 
 impl Default for Style {
     fn default() -> Self {
-        Style { family: String::new(), size: 32.0, bold: false, italic: false, align: Align::Left, letter_spacing: 0.0, line_spacing: 0.0, width: None }
+        Style {
+            family: String::new(),
+            size: 32.0,
+            bold: false,
+            italic: false,
+            align: Align::Left,
+            letter_spacing: 0.0,
+            line_spacing: 0.0,
+            width: None,
+        }
     }
 }
 
@@ -188,7 +199,8 @@ impl Fonts {
     }
 
     fn from_db(db: fontdb::Database) -> Fonts {
-        let mut families: Vec<String> = db.faces().filter_map(|f| f.families.first().map(|(n, _)| n.clone())).filter(|n| !n.starts_with('.')).collect();
+        let mut families: Vec<String> =
+            db.faces().filter_map(|f| f.families.first().map(|(n, _)| n.clone())).filter(|n| !n.starts_with('.')).collect();
         families.sort_by_key(|f| f.to_lowercase());
         families.dedup();
         Fonts { db, families }
@@ -229,7 +241,12 @@ impl Fonts {
         if let Some(f) = self.db.faces().find(|f| f.post_script_name.eq_ignore_ascii_case(name))
             && let Some((family, _)) = f.families.first()
         {
-            return FaceMatch { family: Some(family.clone()), wanted: family.clone(), bold: f.weight.0 >= 600, italic: f.style != fontdb::Style::Normal };
+            return FaceMatch {
+                family: Some(family.clone()),
+                wanted: family.clone(),
+                bold: f.weight.0 >= 600,
+                italic: f.style != fontdb::Style::Normal,
+            };
         }
         let device: Option<&[&str]> = match name {
             "_sans" => Some(DEFAULT_FAMILIES),
@@ -438,7 +455,17 @@ fn lay_out(data: &[u8], index: u32, text: &str, style: &Style) -> Option<Layout>
     }
     let height = (lines.len().max(1) as f32 - 1.0) * line_height + (metrics.ascent - metrics.descent);
     let carets = caret_lines(&lines, &spans, box_width, style.align);
-    Some(Layout { outline, width: box_width.max(0.0), height: height.max(0.0), family: String::new(), missing, lines: lines.len().max(1), line_height, ascent, carets })
+    Some(Layout {
+        outline,
+        width: box_width.max(0.0),
+        height: height.max(0.0),
+        family: String::new(),
+        missing,
+        lines: lines.len().max(1),
+        line_height,
+        ascent,
+        carets,
+    })
 }
 
 /// The caret positions of laid-out lines (see [`CaretLine`]).
@@ -647,8 +674,13 @@ mod tests {
     #[test]
     fn carets_stand_at_every_boundary_line_by_line() {
         let Some(fonts) = fonts() else { return };
-        let l = fonts.layout("ab
-cd", &style(20.0)).unwrap();
+        let l = fonts
+            .layout(
+                "ab
+cd",
+                &style(20.0),
+            )
+            .unwrap();
         assert_eq!(l.carets.len(), 2);
         let (a, b) = (&l.carets[0], &l.carets[1]);
         assert_eq!((a.start, a.end, b.start, b.end), (0, 2, 3, 5), "the line break belongs to neither line");

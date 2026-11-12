@@ -24,11 +24,29 @@ pub fn specs() -> Vec<CommandSpec> {
             draw_brush as crate::RunFn,
         ),
         c("brush.preset_list", "Brush Presets", "{} the built-in brushes and yours, with their settings", false, preset_list),
-        c("brush.preset_save", "Save Brush", "{name, from? (a preset to start from; default: the plain brush), size?, shape?, angle?, roundness?, smoothing?, curve?, pressure_size?, pressure_opacity?, taper_start?, taper_end?, spacing?, jitter? (as draw.brush)} saves a brush of your own (replacing yours of that name; kept in your preferences)", false, preset_save),
+        c(
+            "brush.preset_save",
+            "Save Brush",
+            "{name, from? (a preset to start from; default: the plain brush), size?, shape?, angle?, roundness?, smoothing?, curve?, pressure_size?, pressure_opacity?, taper_start?, taper_end?, spacing?, jitter? (as draw.brush)} saves a brush of your own (replacing yours of that name; kept in your preferences)",
+            false,
+            preset_save,
+        ),
         c("brush.preset_rename", "Rename Brush", "{name, to}", false, preset_rename),
         c("brush.preset_delete", "Delete Brush", "{name} deletes a brush of your own (asks first: it can't be undone)", false, preset_delete),
-        c("brush.preset_export", "Export Brushes", "{path, names? (default: all yours)} writes your brushes to a brush set file (JSON)", false, preset_export),
-        c("brush.preset_import", "Import Brushes", "{path} adds the brushes in a brush set file to yours (a name you have already gets a number)", false, preset_import),
+        c(
+            "brush.preset_export",
+            "Export Brushes",
+            "{path, names? (default: all yours)} writes your brushes to a brush set file (JSON)",
+            false,
+            preset_export,
+        ),
+        c(
+            "brush.preset_import",
+            "Import Brushes",
+            "{path} adds the brushes in a brush set file to yours (a name you have already gets a number)",
+            false,
+            preset_import,
+        ),
     ]
 }
 
@@ -118,7 +136,10 @@ pub(crate) fn bounded_samples(p: &Value) -> Result<Vec<Sample>> {
     let pts = samples(p)?;
     let mut bounds = anicraft_geom::Rect::EMPTY;
     pts.iter().for_each(|x| bounds.include(x.at));
-    if bounds.width() > MAX_EXTENT || bounds.height() > MAX_EXTENT || bounds.min.x.abs().max(bounds.max.x.abs()).max(bounds.min.y.abs()).max(bounds.max.y.abs()) > MAX_EXTENT {
+    if bounds.width() > MAX_EXTENT
+        || bounds.height() > MAX_EXTENT
+        || bounds.min.x.abs().max(bounds.max.x.abs()).max(bounds.min.y.abs()).max(bounds.max.y.abs()) > MAX_EXTENT
+    {
         return Err(EngineError::Param("the stroke is too large".into()));
     }
     Ok(pts)
@@ -166,7 +187,8 @@ fn draw_brush(s: &mut Session, p: &Value) -> Result<Value> {
     let as_stroke = opt_bool(p, "as_stroke")?.unwrap_or(false);
     let unit = ranged(p, "unit", 0.001..=1000.0, 1.0)?;
     let mode_key = opt_str(p, "mode")?.unwrap_or("normal");
-    let mode = PaintMode::from_key(mode_key).ok_or_else(|| EngineError::Param(format!("unknown paint mode '{mode_key}' (normal, fills or behind)")))?;
+    let mode =
+        PaintMode::from_key(mode_key).ok_or_else(|| EngineError::Param(format!("unknown paint mode '{mode_key}' (normal, fills or behind)")))?;
     let color = opt_color(p, "color")?.unwrap_or(if as_stroke { s.style.stroke } else { s.style.fill });
     let color = Rgba { a: color.a * pressure_opacity(&b, &pts), ..color };
     let object = object_param(s, p)?;
@@ -192,7 +214,13 @@ fn draw_brush(s: &mut Session, p: &Value) -> Result<Value> {
         name: String::new(),
         transform: Affine::translate(c.x, c.y),
         color: ColorEffect::default(),
-        kind: ElementKind::Shape(Shape { path: Arc::new(path.transformed(&Affine::translate(-c.x, -c.y))), fill: Some(Paint::Solid(color)), stroke: None, fill_rule: FillRule::EvenOdd, merge: !object }),
+        kind: ElementKind::Shape(Shape {
+            path: Arc::new(path.transformed(&Affine::translate(-c.x, -c.y))),
+            fill: Some(Paint::Solid(color)),
+            stroke: None,
+            fill_rule: FillRule::EvenOdd,
+            merge: !object,
+        }),
     };
     if s.editable_keyframe()?.elements.len() >= 100_000 {
         return Err(EngineError::State("too many elements on this keyframe".into()));
@@ -395,7 +423,12 @@ pub fn preview(preset: &BrushPreset, as_stroke: bool, w: u32, h: u32, scale: f32
     let mut scratch = Session::new(doc);
     let mut params = BrushPreset { size: preset.size.clamp(2.0, (ph * 0.4).max(2.0)), ..preset.clone() }.params();
     params["points"] = json!(preview_points(pw, ph));
-    params["color"] = json!(format!("#{:02x}{:02x}{:02x}", (color.r.clamp(0.0, 1.0) * 255.0).round() as u8, (color.g.clamp(0.0, 1.0) * 255.0).round() as u8, (color.b.clamp(0.0, 1.0) * 255.0).round() as u8));
+    params["color"] = json!(format!(
+        "#{:02x}{:02x}{:02x}",
+        (color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (color.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (color.b.clamp(0.0, 1.0) * 255.0).round() as u8
+    ));
     params["object"] = json!(true);
     params["as_stroke"] = json!(as_stroke);
     scratch.execute("draw.brush", &params)?;

@@ -15,7 +15,8 @@ fn corpus() -> PathBuf {
 
 /// Every package in the corpus, by folder name.
 fn cases() -> Vec<String> {
-    let mut out: Vec<String> = std::fs::read_dir(corpus()).unwrap().flatten().filter(|e| e.path().is_dir()).map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    let mut out: Vec<String> =
+        std::fs::read_dir(corpus()).unwrap().flatten().filter(|e| e.path().is_dir()).map(|e| e.file_name().to_string_lossy().into_owned()).collect();
     out.sort();
     out
 }
@@ -75,10 +76,7 @@ const REPORTS: &[(&str, &[(&str, usize)])] = &[
     ("scenes", &[("frame comments", 1)]),
     ("scripts", &[]),
     ("shapes", &[]),
-    (
-        "symbols",
-        &[("instances of missing symbols", 1), ("missing library files", 1), ("reverse loop modes (played forward)", 1)],
-    ),
+    ("symbols", &[("instances of missing symbols", 1), ("missing library files", 1), ("reverse loop modes (played forward)", 1)]),
     ("text", &[("text fields (no fonts on this computer)", 4)]),
     ("textfields", &[("text fields (no fonts on this computer)", 4)]),
     ("tweens", &[("motion tweens (kept as keyframes)", 1), ("tween spins (turned the shortest way)", 1)]),
@@ -115,9 +113,11 @@ fn each_package_reports_exactly_what_it_uses_that_does_not_come_across() {
         let (_, report) = import(case);
         let want: BTreeMap<String, usize> = want.iter().map(|(k, n)| (k.to_string(), *n)).collect();
         assert_eq!(report.skipped, want, "{case}");
-        let kept: BTreeMap<String, usize> = KEPT.iter().find(|(c, _)| c == case).map(|(_, k)| k.iter().map(|(k, n)| (k.to_string(), *n)).collect()).unwrap_or_default();
+        let kept: BTreeMap<String, usize> =
+            KEPT.iter().find(|(c, _)| c == case).map(|(_, k)| k.iter().map(|(k, n)| (k.to_string(), *n)).collect()).unwrap_or_default();
         assert_eq!(report.kept, kept, "{case}: kept, not run");
-        let runs: BTreeMap<String, usize> = RUNS.iter().find(|(c, _)| c == case).map(|(_, k)| k.iter().map(|(k, n)| (k.to_string(), *n)).collect()).unwrap_or_default();
+        let runs: BTreeMap<String, usize> =
+            RUNS.iter().find(|(c, _)| c == case).map(|(_, k)| k.iter().map(|(k, n)| (k.to_string(), *n)).collect()).unwrap_or_default();
         assert_eq!(report.runs, runs, "{case}: frame scripts that run");
         assert!(report.notes.is_empty() && report.missing_fonts.is_empty(), "{case}: {report:?}");
     }
@@ -128,7 +128,11 @@ fn every_package_opens_from_its_folder() {
     for case in cases() {
         let (doc, _) = anicraft_xfl::import_path(&corpus().join(&case)).unwrap_or_else(|e| panic!("{case}: {e}"));
         let (mem, _) = import(&case);
-        assert_eq!((doc.scenes.len(), doc.library.len(), doc.bitmaps.len(), doc.frame_count()), (mem.scenes.len(), mem.library.len(), mem.bitmaps.len(), mem.frame_count()), "{case}");
+        assert_eq!(
+            (doc.scenes.len(), doc.library.len(), doc.bitmaps.len(), doc.frame_count()),
+            (mem.scenes.len(), mem.library.len(), mem.bitmaps.len(), mem.frame_count()),
+            "{case}"
+        );
         // And through the .xfl file inside it, as Animate saves one.
         let (doc, _) = anicraft_xfl::import_path(&corpus().join(&case).join(format!("{case}.xfl"))).unwrap_or_else(|e| panic!("{case}: {e}"));
         assert_eq!(doc.scenes.len(), mem.scenes.len());
@@ -183,7 +187,10 @@ fn symbols_keep_their_kinds_loop_modes_and_colour_effects() {
     assert_eq!(kind("Blink"), Some(SymbolKind::Graphic));
     assert_eq!(doc.library.len(), 5);
     let loops = &doc.timeline(0).layers[2].keyframes[0].elements;
-    let modes: Vec<(LoopMode, u32)> = loops.iter().filter_map(|e| if let ElementKind::Symbol { loop_mode, first_frame, .. } = &e.kind { Some((*loop_mode, *first_frame)) } else { None }).collect();
+    let modes: Vec<(LoopMode, u32)> = loops
+        .iter()
+        .filter_map(|e| if let ElementKind::Symbol { loop_mode, first_frame, .. } = &e.kind { Some((*loop_mode, *first_frame)) } else { None })
+        .collect();
     assert_eq!(modes, [(LoopMode::Loop, 0), (LoopMode::PlayOnce, 1), (LoopMode::SingleFrame, 2), (LoopMode::PlayOnce, 3), (LoopMode::Loop, 0)]);
     let fx: Vec<ColorEffect> = doc.timeline(0).layers[0].keyframes[0].elements.iter().map(|e| e.color).collect();
     use anicraft_doc::{ColorEffect, ColorTransform, Rgba};
@@ -191,7 +198,11 @@ fn symbols_keep_their_kinds_loop_modes_and_colour_effects() {
     assert_eq!(fx[1], ColorEffect::Tint { color: Rgba::hex(0x0000ff), amount: 0.7 });
     assert_eq!(fx[2], ColorEffect::Brightness(0.6));
     assert_eq!(fx[3], ColorEffect::Brightness(-0.5));
-    assert_eq!(fx[4], ColorEffect::Advanced(ColorTransform { mul: [0.2, 1.0, 1.0, 0.8], add: [0.0, 120.0 / 255.0, 0.0, 0.0] }), "advanced: every channel");
+    assert_eq!(
+        fx[4],
+        ColorEffect::Advanced(ColorTransform { mul: [0.2, 1.0, 1.0, 0.8], add: [0.0, 120.0 / 255.0, 0.0, 0.0] }),
+        "advanced: every channel"
+    );
     assert_eq!(doc.timeline(0).layers[1].keyframes[0].elements[0].name, "spinner", "a movie clip keeps its instance name");
 }
 
@@ -208,7 +219,9 @@ fn colour_effects_come_across_in_every_style() {
     assert_eq!(fx[5], ColorEffect::Brightness(-0.4));
     let pair = doc.library.iter().find(|s| s.name == "Pair").expect("Pair");
     assert_eq!(pair.timeline.layers[0].keyframes[0].elements[0].color, ColorEffect::Tint { color: Rgba::hex(0xFF0000), amount: 0.5 });
-    let ends = |l: usize| (doc.timeline(0).layers[l].keyframes[0].elements[0].color.style(), doc.timeline(0).layers[l].keyframes[1].elements[0].color.style());
+    let ends = |l: usize| {
+        (doc.timeline(0).layers[l].keyframes[0].elements[0].color.style(), doc.timeline(0).layers[l].keyframes[1].elements[0].color.style())
+    };
     use anicraft_doc::ColorStyle;
     assert_eq!(ends(1), (ColorStyle::Tint, ColorStyle::Advanced));
     assert_eq!(ends(2), (ColorStyle::Brightness, ColorStyle::Brightness));
@@ -223,7 +236,10 @@ fn tweens_keep_their_kinds_eases_and_hints() {
     assert_eq!((t(3).kind, t(3).easing), (TweenKind::Shape, Easing::Classic(50.0)));
     let hints = &doc.timeline(0).layers[3].keyframes[0].hints;
     assert_eq!(hints.len(), 1);
-    assert!(hints[0].start.distance(anicraft_geom::Vec2::new(20.0, 120.0)) < 0.01 && hints[0].end.distance(anicraft_geom::Vec2::new(270.0, 115.0)) < 0.01, "{hints:?}");
+    assert!(
+        hints[0].start.distance(anicraft_geom::Vec2::new(20.0, 120.0)) < 0.01 && hints[0].end.distance(anicraft_geom::Vec2::new(270.0, 115.0)) < 0.01,
+        "{hints:?}"
+    );
     assert!(doc.timeline(0).layers[4].keyframes[0].tween.is_none(), "a motion tween stays a keyframe");
     assert_eq!(doc.frame_count(), 13);
 }
@@ -244,7 +260,10 @@ fn masks_and_folders_link_up() {
     let l = &doc.timeline(0).layers;
     assert_eq!(layer_names(&doc, 0), ["Spot", "Stripes", "Inside", "Window", "Sky", "Loose", "Ground"]);
     let kinds: Vec<LayerKind> = l.iter().map(|l| l.kind).collect();
-    assert_eq!(kinds, [LayerKind::Mask, LayerKind::Normal, LayerKind::Folder, LayerKind::Mask, LayerKind::Normal, LayerKind::Normal, LayerKind::Normal]);
+    assert_eq!(
+        kinds,
+        [LayerKind::Mask, LayerKind::Normal, LayerKind::Folder, LayerKind::Mask, LayerKind::Normal, LayerKind::Normal, LayerKind::Normal]
+    );
     let parents: Vec<Option<usize>> = l.iter().map(|x| x.parent.and_then(|p| l.iter().position(|y| y.id == p))).collect();
     assert_eq!(parents, [None, Some(0), None, Some(2), Some(3), Some(2), None]);
     let sym = &doc.library[0];
@@ -278,7 +297,9 @@ fn scenes_labels_and_scripts() {
     assert_eq!(doc.stage.fps, 12.0);
     // The scripts are kept as written, comment included (compared without the line endings a
     // Windows checkout gives the file).
-    let kept = |scene: usize, layer: usize, key: usize| doc.timeline(scene).layers[layer].keyframes[key].script.as_ref().and_then(|s| s.source()).map(|s| s.text.replace("\r\n", "\n"));
+    let kept = |scene: usize, layer: usize, key: usize| {
+        doc.timeline(scene).layers[layer].keyframes[key].script.as_ref().and_then(|s| s.source()).map(|s| s.text.replace("\r\n", "\n"))
+    };
     assert_eq!(kept(0, 0, 1).as_deref(), Some("stop();\n// The sun is up; wait for a click."));
     assert_eq!(kept(1, 0, 1).as_deref(), Some(r#"gotoAndPlay("Opening", "intro");"#));
 }
@@ -320,9 +341,17 @@ fn bitmaps_come_from_png_and_jpeg_files() {
 #[test]
 fn filters_and_blend_modes_come_across() {
     let (doc, _) = import("filters");
-    let filters: Vec<usize> = doc.timeline(0).layers[0].keyframes[0].elements.iter().map(|e| if let ElementKind::Symbol { filters, .. } = &e.kind { filters.len() } else { 99 }).collect();
+    let filters: Vec<usize> = doc.timeline(0).layers[0].keyframes[0]
+        .elements
+        .iter()
+        .map(|e| if let ElementKind::Symbol { filters, .. } = &e.kind { filters.len() } else { 99 })
+        .collect();
     assert_eq!(filters, [1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 1], "switched-off and unknown filters are left out");
-    let blends: Vec<&str> = doc.timeline(0).layers[1].keyframes[0].elements.iter().filter_map(|e| if let ElementKind::Symbol { blend, .. } = &e.kind { Some(blend.key()) } else { None }).collect();
+    let blends: Vec<&str> = doc.timeline(0).layers[1].keyframes[0]
+        .elements
+        .iter()
+        .filter_map(|e| if let ElementKind::Symbol { blend, .. } = &e.kind { Some(blend.key()) } else { None })
+        .collect();
     assert_eq!(blends, ["multiply", "screen", "difference", "add", "subtract", "overlay", "hardlight", "invert"]);
 }
 
@@ -338,7 +367,13 @@ fn text_fields_become_blocks_with_this_computers_fonts() {
         .iter()
         .filter_map(|e| if let ElementKind::Text(t) = &e.kind { Some((e.name.clone(), t.text.clone(), t.size, t.bold)) } else { None })
         .collect();
-    let want = [("", "Corpus", 28.0, true), ("", "self-authored, line two", 12.0, false), ("", "A fixed-width field wraps its words onto lines.", 11.0, false), ("score", "Score 0042", 18.0, false), ("answer", "type here", 14.0, false)];
+    let want = [
+        ("", "Corpus", 28.0, true),
+        ("", "self-authored, line two", 12.0, false),
+        ("", "A fixed-width field wraps its words onto lines.", 11.0, false),
+        ("score", "Score 0042", 18.0, false),
+        ("answer", "type here", 14.0, false),
+    ];
     assert_eq!(blocks.iter().map(|(n, t, s, b)| (n.as_str(), t.as_str(), *s, *b)).collect::<Vec<_>>(), want);
     assert_eq!(report.runs.get("dynamic text fields"), Some(&1), "fields run in Test Movie (ADR 0066)");
     assert!(!report.skipped.contains_key("text fields (no fonts on this computer)"));
@@ -350,7 +385,15 @@ fn text_fields_become_blocks_with_this_computers_fonts() {
         .filter_map(|e| if let ElementKind::Text(t) = &e.kind { Some((e.name.clone(), t.kind(), t.box_width, t.box_height)) } else { None })
         .collect();
     use anicraft_doc::TextKind::{Dynamic, Input};
-    assert_eq!(fields, [("score_txt".into(), Dynamic, 200.0, 28.0), ("name_txt".into(), Input, 200.0, 24.0), ("notes_txt".into(), Input, 140.0, 64.0), ("pw_txt".into(), Input, 120.0, 24.0)]);
+    assert_eq!(
+        fields,
+        [
+            ("score_txt".into(), Dynamic, 200.0, 28.0),
+            ("name_txt".into(), Input, 200.0, 24.0),
+            ("notes_txt".into(), Input, 140.0, 64.0),
+            ("pw_txt".into(), Input, 120.0, 24.0)
+        ]
+    );
 }
 
 /// A small deterministic generator (xorshift), so a failing variant can be found again.
@@ -368,7 +411,35 @@ impl Rng {
 }
 
 /// Bytes and strings that poke at the readers: markup, edge commands, numbers out of range.
-const POISON: &[&str] = &["<", ">", "\"", "/>", "</", "&#xD;", "&bogus;", "!", "|", "[", "]", "#", "#FFFFFFFF.FF", "S9", "-", "1e39", "-nan", "inf", "99999999999", "-2147483649", " ", "\u{0}", "\u{2028}", "é", "parentLayerIndex=\"0\" ", "duration=\"100001\" ", "index=\"4294967295\" "];
+const POISON: &[&str] = &[
+    "<",
+    ">",
+    "\"",
+    "/>",
+    "</",
+    "&#xD;",
+    "&bogus;",
+    "!",
+    "|",
+    "[",
+    "]",
+    "#",
+    "#FFFFFFFF.FF",
+    "S9",
+    "-",
+    "1e39",
+    "-nan",
+    "inf",
+    "99999999999",
+    "-2147483649",
+    " ",
+    "\u{0}",
+    "\u{2028}",
+    "é",
+    "parentLayerIndex=\"0\" ",
+    "duration=\"100001\" ",
+    "index=\"4294967295\" ",
+];
 
 /// `bytes` garbled one of several ways.
 fn garble(bytes: &[u8], rng: &mut Rng) -> Vec<u8> {
@@ -489,6 +560,7 @@ fn interactive_scripts_run_in_the_player() {
     assert_eq!(r.state.props.get(&vec![door]).and_then(|o| o.alpha), Some(1.0));
     // The scripts package: the frame with `if` is kept and doesn't run; the others run.
     let (doc, _) = import("scripts");
-    let runs: Vec<bool> = doc.timeline(0).layers[0].keyframes.iter().filter_map(|k| k.script.as_ref().and_then(|s| s.source())).map(|s| s.runs()).collect();
+    let runs: Vec<bool> =
+        doc.timeline(0).layers[0].keyframes.iter().filter_map(|k| k.script.as_ref().and_then(|s| s.source())).map(|s| s.runs()).collect();
     assert_eq!(runs, [false, true]);
 }

@@ -16,8 +16,24 @@ use std::sync::Arc;
 pub fn specs() -> Vec<CommandSpec> {
     let c = |id, label, menu, shortcut, params, mutates, run| CommandSpec { id, label, menu, shortcut, params, mutates, run };
     vec![
-        c("camera.add", "Add Camera", "Insert/Timeline", None, "{} (a camera layer on top of the scene, at rest: it sees the stage as it is; nothing happens if there is one)", true, add as crate::RunFn),
-        c("camera.remove", "Remove Camera", "Modify/Timeline", None, "{} (removes the camera layer and its moves; asks first when the camera is animated)", true, remove),
+        c(
+            "camera.add",
+            "Add Camera",
+            "Insert/Timeline",
+            None,
+            "{} (a camera layer on top of the scene, at rest: it sees the stage as it is; nothing happens if there is one)",
+            true,
+            add as crate::RunFn,
+        ),
+        c(
+            "camera.remove",
+            "Remove Camera",
+            "Modify/Timeline",
+            None,
+            "{} (removes the camera layer and its moves; asks first when the camera is animated)",
+            true,
+            remove,
+        ),
         c(
             "camera.set",
             "Camera",
@@ -27,8 +43,24 @@ pub fn specs() -> Vec<CommandSpec> {
             true,
             set,
         ),
-        c("camera.info", "Camera Info", "", None, "{frame?} → the camera at the frame (x, y, zoom %, rotation °, tint) and its frame on the stage", false, info),
-        c("layer.set_depth", "Layer Depth", "", None, "{depth (px behind the stage, −500…10000; deeper layers move less when the camera pans), layer?}", true, set_depth),
+        c(
+            "camera.info",
+            "Camera Info",
+            "",
+            None,
+            "{frame?} → the camera at the frame (x, y, zoom %, rotation °, tint) and its frame on the stage",
+            false,
+            info,
+        ),
+        c(
+            "layer.set_depth",
+            "Layer Depth",
+            "",
+            None,
+            "{depth (px behind the stage, −500…10000; deeper layers move less when the camera pans), layer?}",
+            true,
+            set_depth,
+        ),
     ]
 }
 
@@ -98,11 +130,14 @@ pub(crate) fn camera_moves(l: &Layer) -> usize {
 pub(crate) fn keys_fit<'a>(kind: LayerKind, mut keys: impl Iterator<Item = &'a Keyframe>) -> Result<()> {
     let camera = kind == LayerKind::Camera;
     if keys.any(|k| k.elements.iter().any(|e| matches!(e.kind, ElementKind::Camera) != camera)) {
-        return Err(EngineError::State(if camera { "the camera layer holds only the camera; put artwork on another layer".into() } else { "camera keyframes belong on the camera layer".into() }));
+        return Err(EngineError::State(if camera {
+            "the camera layer holds only the camera; put artwork on another layer".into()
+        } else {
+            "camera keyframes belong on the camera layer".into()
+        }));
     }
     Ok(())
 }
-
 
 fn set(s: &mut Session, p: &Value) -> Result<Value> {
     let id = camera_layer(s).ok_or_else(no_camera)?;

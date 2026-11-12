@@ -220,7 +220,8 @@ pub fn run(argv: &[String]) -> Result<String, String> {
             let script = a.positional.get(1).ok_or("run needs a script.json")?;
             let text = std::fs::read_to_string(script).map_err(|e| format!("{script}: {e}"))?;
             // Windows editors often save UTF-8 with a byte-order mark; JSON parsers reject it.
-            let steps: Vec<Value> = serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| format!("{script}: expected a JSON array of {{cmd, params}}: {e}"))?;
+            let steps: Vec<Value> = serde_json::from_str(text.trim_start_matches('\u{feff}'))
+                .map_err(|e| format!("{script}: expected a JSON array of {{cmd, params}}: {e}"))?;
             let mut results = Vec::new();
             for (i, step) in steps.iter().enumerate() {
                 let id = step.get("cmd").and_then(Value::as_str).ok_or_else(|| format!("step {}: missing \"cmd\"", i + 1))?;
@@ -424,11 +425,7 @@ pub fn bench(a: &Args) -> Result<String, String> {
     }
     let (rows, missed) = check_budgets(&out);
     let report = serde_json::to_string_pretty(&json!({"measured": out, "budgets": rows})).map_err(|e| e.to_string())?;
-    if missed.is_empty() {
-        Ok(report)
-    } else {
-        Err(format!("{report}\n\nover budget: {}", missed.join("; ")))
-    }
+    if missed.is_empty() { Ok(report) } else { Err(format!("{report}\n\nover budget: {}", missed.join("; "))) }
 }
 
 /// Answers one JSON request.
@@ -506,7 +503,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("anicraft-cli-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("f.png");
-        let argv: Vec<String> = ["render", "--sample", "--frame", "12", "--scale", "0.25", "--out", out.to_str().unwrap()].iter().map(|s| s.to_string()).collect();
+        let argv: Vec<String> =
+            ["render", "--sample", "--frame", "12", "--scale", "0.25", "--out", out.to_str().unwrap()].iter().map(|s| s.to_string()).collect();
         run(&argv).unwrap();
         let bytes = std::fs::read(&out).unwrap();
         assert_eq!(&bytes[1..4], b"PNG");
@@ -549,7 +547,10 @@ mod tests {
         // At 400% zoom on the stage centre, off-screen shapes are culled: at most 1/8 drawn.
         let dl = evaluate(&small, 5);
         let view = anicraft_render::View::stage(&small, 1.0);
-        let zoomed = anicraft_render::View { transform: anicraft_geom::Affine::translate(-2880.0, -1620.0).mul(&anicraft_geom::Affine::scale(4.0, 4.0)), ..view };
+        let zoomed = anicraft_render::View {
+            transform: anicraft_geom::Affine::translate(-2880.0, -1620.0).mul(&anicraft_geom::Affine::scale(4.0, 4.0)),
+            ..view
+        };
         let (_, st) = anicraft_render::render(&dl, &zoomed).unwrap();
         assert!(st.items >= 1000 && st.drawn * 8 <= st.items, "{} of {} shapes drawn at 400%", st.drawn, st.items);
     }

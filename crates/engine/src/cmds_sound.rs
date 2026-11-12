@@ -51,8 +51,24 @@ pub fn specs() -> Vec<CommandSpec> {
             true,
             set,
         ),
-        c("layer.toggle_mute", "Mute/Unmute Layer", "", None, "{layer?} (its sounds, and those in the symbols on it, go silent in playback and every export)", true, toggle_mute),
-        c("layer.set_volume", "Layer Volume", "", None, "{volume? (0–1: the layer's sounds and those in the symbols on it), muted?, layer?}", true, set_volume),
+        c(
+            "layer.toggle_mute",
+            "Mute/Unmute Layer",
+            "",
+            None,
+            "{layer?} (its sounds, and those in the symbols on it, go silent in playback and every export)",
+            true,
+            toggle_mute,
+        ),
+        c(
+            "layer.set_volume",
+            "Layer Volume",
+            "",
+            None,
+            "{volume? (0–1: the layer's sounds and those in the symbols on it), muted?, layer?}",
+            true,
+            set_volume,
+        ),
         c("sound.remove", "Remove Sound", "", None, "{layer?, frame?}", true, |s, p| set(s, &with_null_sound(p))),
         c("sound.delete", "Delete Sound", "", None, "{sound} (from the library and every keyframe that uses it)", true, delete),
         c("sound.rename", "Rename Sound", "", None, "{sound, name}", true, rename),
@@ -110,7 +126,8 @@ pub(crate) fn import_to_library(s: &mut Session, p: &Value) -> Result<Value> {
     if matches!(ext.as_deref(), Some("png" | "jpg" | "jpeg")) {
         let bytes = crate::vfs::read(&path)?;
         let id = anicraft_doc::BitmapId(s.doc.alloc_id());
-        let bitmap = anicraft_doc::Bitmap::from_image(id, file_name(&path, "image"), bytes).map_err(|e| EngineError::Format(format!("{}: {e}", path.display())))?;
+        let bitmap = anicraft_doc::Bitmap::from_image(id, file_name(&path, "image"), bytes)
+            .map_err(|e| EngineError::Format(format!("{}: {e}", path.display())))?;
         let (w, h) = (bitmap.width, bitmap.height);
         s.doc.bitmaps.push(Arc::new(bitmap));
         return Ok(json!({"bitmap": id.0, "width": w, "height": h}));
@@ -119,7 +136,9 @@ pub(crate) fn import_to_library(s: &mut Session, p: &Value) -> Result<Value> {
         // A drawing becomes a graphic symbol holding its shapes (ADR 0065).
         return crate::cmds_file::import_svg_symbol(s, &path, opt_str(p, "name")?);
     }
-    Err(EngineError::Param("Import to Library reads WAV, Ogg Vorbis and MP3 sounds, PNG and JPEG images, and SVG drawings (as a graphic symbol)".into()))
+    Err(EngineError::Param(
+        "Import to Library reads WAV, Ogg Vorbis and MP3 sounds, PNG and JPEG images, and SVG drawings (as a graphic symbol)".into(),
+    ))
 }
 
 /// Import to Stage with a sound: into the library, and onto a new layer named after the file,
@@ -139,7 +158,11 @@ pub(crate) fn import_to_stage(s: &mut Session, path: &Path) -> Result<Value> {
 /// Custom envelope points from `[{at, left, right}…]` (or `[[at, left, right]…]`): seconds
 /// from the sound's start, volumes `0..=1`.
 fn envelope_param(v: &Value) -> Result<Vec<EnvelopePoint>> {
-    let bad = || EngineError::Param(format!("param 'envelope' must be 1 to {MAX_ENVELOPE_POINTS} points [{{at (seconds, 0–{MAX_ENVELOPE_SECONDS}), left (0–1), right (0–1)}}…]"));
+    let bad = || {
+        EngineError::Param(format!(
+            "param 'envelope' must be 1 to {MAX_ENVELOPE_POINTS} points [{{at (seconds, 0–{MAX_ENVELOPE_SECONDS}), left (0–1), right (0–1)}}…]"
+        ))
+    };
     let list = v.as_array().filter(|a| (1..=MAX_ENVELOPE_POINTS).contains(&a.len())).ok_or_else(bad)?;
     let mut out = Vec::with_capacity(list.len());
     for item in list {
@@ -158,14 +181,20 @@ fn envelope_param(v: &Value) -> Result<Vec<EnvelopePoint>> {
 fn apply_settings(p: &Value, fs: FrameSound, heard: &dyn Fn(&FrameSound) -> f64) -> Result<FrameSound> {
     let mut fs = apply_timing(p, fs)?;
     if let Some(e) = opt_str(p, "effect")? {
-        let want = SoundEffect::from_key(e).ok_or_else(|| EngineError::Param("param 'effect' must be none, left_channel, right_channel, fade_left_to_right, fade_right_to_left, fade_in, fade_out or custom".into()))?;
+        let want = SoundEffect::from_key(e).ok_or_else(|| {
+            EngineError::Param(
+                "param 'effect' must be none, left_channel, right_channel, fade_left_to_right, fade_right_to_left, fade_in, fade_out or custom"
+                    .into(),
+            )
+        })?;
         fs.effect = match want {
             // Custom keeps the points it has, or starts from the effect chosen before (full
             // volume: a point at each end, to drag).
             SoundEffect::Custom(_) if matches!(fs.effect, SoundEffect::Custom(_)) => fs.effect,
             SoundEffect::Custom(_) => {
                 let t = heard(&fs);
-                let pts = if fs.effect.is_none() { vec![EnvelopePoint::new(0.0, 1.0, 1.0), EnvelopePoint::new(t, 1.0, 1.0)] } else { fs.effect.points(t) };
+                let pts =
+                    if fs.effect.is_none() { vec![EnvelopePoint::new(0.0, 1.0, 1.0), EnvelopePoint::new(t, 1.0, 1.0)] } else { fs.effect.points(t) };
                 SoundEffect::Custom(clean_points(&pts))
             }
             preset => preset,
@@ -244,7 +273,10 @@ fn set(s: &mut Session, p: &Value) -> Result<Value> {
     let (lid, frame) = target(s, p)?;
     let fps = s.doc.stage.fps;
     let tl = s.timeline();
-    let place = tl.layer(lid.unwrap_or(s.layer)).and_then(|l| l.keyframe_at(frame)).map(|k| (k.duration, s.doc.frame_count().saturating_sub(s.doc.scene_start(s.scene).saturating_add(k.start))));
+    let place = tl
+        .layer(lid.unwrap_or(s.layer))
+        .and_then(|l| l.keyframe_at(frame))
+        .map(|k| (k.duration, s.doc.frame_count().saturating_sub(s.doc.scene_start(s.scene).saturating_add(k.start))));
     let sounds = s.doc.sounds.clone();
     let heard = move |fs: &FrameSound| match (sounds.iter().find(|x| x.id == fs.sound), place) {
         (Some(x), Some((span, rest))) => fs.heard_seconds(x, span, rest, fps),
@@ -356,7 +388,8 @@ fn rename(s: &mut Session, p: &Value) -> Result<Value> {
 pub(crate) fn write_mix(path: &Path, voices: &[Voice], rate: u32, from: u64, to: u64, bits: wav::Bits) -> Result<u64> {
     use std::io::Write;
     let frames = to.saturating_sub(from);
-    let header = wav::header(rate, 2, bits, frames).ok_or_else(|| EngineError::Param("that much audio does not fit in a WAV file (4 GB); lower 'rate' or the frame range".into()))?;
+    let header = wav::header(rate, 2, bits, frames)
+        .ok_or_else(|| EngineError::Param("that much audio does not fit in a WAV file (4 GB); lower 'rate' or the frame range".into()))?;
     let tmp = path.with_extension("wav.tmp");
     let result = (|| -> Result<u64> {
         let mut f = crate::vfs::Writer::create(&tmp)?;
@@ -375,11 +408,14 @@ pub(crate) fn write_mix(path: &Path, voices: &[Voice], rate: u32, from: u64, to:
             at += n as u64;
         }
         f.finish()?;
-        Ok(header.len() as u64 + frames * 2 * u64::from(match bits {
-            wav::Bits::Int16 => 2u8,
-            wav::Bits::Int24 => 3,
-            wav::Bits::Float32 => 4,
-        }))
+        Ok(header.len() as u64
+            + frames
+                * 2
+                * u64::from(match bits {
+                    wav::Bits::Int16 => 2u8,
+                    wav::Bits::Int24 => 3,
+                    wav::Bits::Float32 => 4,
+                }))
     })();
     match result {
         Ok(n) => {
@@ -453,7 +489,9 @@ fn export_audio(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let (voices, a, b) = soundtrack(s, first, to, rate);
     let bytes = write_mix(&path, &voices, rate, a, b, bits)?;
-    Ok(json!({"written": path.display().to_string(), "bytes": bytes, "rate": rate, "seconds": (b - a) as f64 / f64::from(rate), "frames": to - first + 1, "sounds": voices.len()}))
+    Ok(
+        json!({"written": path.display().to_string(), "bytes": bytes, "rate": rate, "seconds": (b - a) as f64 / f64::from(rate), "frames": to - first + 1, "sounds": voices.len()}),
+    )
 }
 
 #[cfg(test)]

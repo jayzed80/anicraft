@@ -7,7 +7,17 @@ use anicraft_engine::{CommandSpec, commands};
 
 // Commands sits where Animate has it: after Modify, before Control.
 // English keys (the registry's menu paths start with them), translated where they are drawn.
-pub(crate) const TOP_MENUS: [&str; 9] = [tr_noop!("File"), tr_noop!("Edit"), tr_noop!("View"), tr_noop!("Insert"), tr_noop!("Modify"), tr_noop!("Commands"), tr_noop!("Control"), tr_noop!("Window"), tr_noop!("Help")];
+pub(crate) const TOP_MENUS: [&str; 9] = [
+    tr_noop!("File"),
+    tr_noop!("Edit"),
+    tr_noop!("View"),
+    tr_noop!("Insert"),
+    tr_noop!("Modify"),
+    tr_noop!("Commands"),
+    tr_noop!("Control"),
+    tr_noop!("Window"),
+    tr_noop!("Help"),
+];
 
 pub fn bar(app: &mut App, ui: &mut egui::Ui) {
     let cmds = commands();
@@ -39,7 +49,11 @@ pub fn bar(app: &mut App, ui: &mut egui::Ui) {
         }
         // Windows and Linux: no name before the menus; the window title already shows it.
         for ((top, label), key) in TOP_MENUS.into_iter().zip(&labels).zip(&keys) {
-            let title = if underline { egui::WidgetText::from(crate::theme::access_key_label(label, key.map(|(i, _)| i))) } else { egui::WidgetText::from(label.as_str()) };
+            let title = if underline {
+                egui::WidgetText::from(crate::theme::access_key_label(label, key.map(|(i, _)| i)))
+            } else {
+                egui::WidgetText::from(label.as_str())
+            };
             let r = ui.menu_button(title, |ui| {
                 ui.set_min_width(230.0);
                 // The menu's own area, which egui leaves anonymous: a menu named by its title.
@@ -175,7 +189,11 @@ impl MenuKeys {
             let pass = if now { &vp.this_pass } else { &vp.prev_pass };
             // (Not the menu's own area, which egui makes clickable.)
             let area = layer.id.with("move");
-            pass.widgets.get_layer(layer).filter(|w| w.enabled && w.sense.is_focusable() && w.id != area).map(|w| (w.rect.top(), w.rect.left(), w.id)).collect()
+            pass.widgets
+                .get_layer(layer)
+                .filter(|w| w.enabled && w.sense.is_focusable() && w.id != area)
+                .map(|w| (w.rect.top(), w.rect.left(), w.id))
+                .collect()
         });
         v.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
         v.into_iter().map(|(_, _, id)| id).collect()
@@ -214,7 +232,9 @@ impl MenuKeys {
     /// Alt pressed and let go with nothing else in between.
     fn alt_tap(&mut self, ctx: &egui::Context) -> bool {
         let (alt, other, focused) = ctx.input(|i| {
-            let events = i.events.iter().any(|e| matches!(e, egui::Event::Key { .. } | egui::Event::PointerButton { .. } | egui::Event::Text(_) | egui::Event::MouseWheel { .. }));
+            let events = i.events.iter().any(|e| {
+                matches!(e, egui::Event::Key { .. } | egui::Event::PointerButton { .. } | egui::Event::Text(_) | egui::Event::MouseWheel { .. })
+            });
             (i.modifiers.alt, events || i.modifiers.ctrl || i.modifiers.shift || i.modifiers.mac_cmd, i.focused)
         });
         let mut tap = false;
@@ -236,7 +256,9 @@ impl MenuKeys {
     /// Alt+letter opens that menu, unless the shortcut table has the key (the user bound it).
     /// Runs before the shortcuts: egui matches a plain "H" with Alt held too.
     pub fn access_key(&mut self, ctx: &egui::Context, bound: impl Fn(egui::Key) -> bool) {
-        if !Self::available() || !ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { pressed: true, modifiers, .. } if modifiers.alt))) {
+        if !Self::available()
+            || !ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { pressed: true, modifiers, .. } if modifiers.alt)))
+        {
             return;
         }
         let labels = top_labels();
@@ -422,12 +444,17 @@ fn enabled(app: &App, id: &str) -> bool {
     match id {
         "edit.undo" => app.s.can_undo(),
         "edit.redo" => app.s.can_redo(),
-        "edit.delete" | "edit.duplicate" | "modify.convert_to_symbol" | "modify.break_apart" | "arrange.bring_to_front" | "arrange.send_to_back" => !app.s.selection.is_empty(),
+        "edit.delete" | "edit.duplicate" | "modify.convert_to_symbol" | "modify.break_apart" | "arrange.bring_to_front" | "arrange.send_to_back" => {
+            !app.s.selection.is_empty()
+        }
         "layer.delete" => app.s.timeline().layers.len() > 1,
         "scene.delete" => app.s.doc.scenes.len() > 1,
         // Ctrl+E opens the selected instance, or goes back to the document (ADR 0045).
         "symbol.exit" => !app.s.editing.is_empty(),
-        "symbol.edit" => !app.s.editing.is_empty() || app.s.selected_elements().iter().any(|(_, e)| matches!(e.kind, anicraft_engine::doc::ElementKind::Symbol { .. })),
+        "symbol.edit" => {
+            !app.s.editing.is_empty()
+                || app.s.selected_elements().iter().any(|(_, e)| matches!(e.kind, anicraft_engine::doc::ElementKind::Symbol { .. }))
+        }
         "scene.prev" | "scene.move_up" => app.s.scene > 0,
         "scene.next" | "scene.move_down" => app.s.scene + 1 < app.s.doc.scenes.len(),
         "timeline.clear_keyframe" => match app.frame_sel {
@@ -436,8 +463,12 @@ fn enabled(app: &App, id: &str) -> bool {
         },
         "timeline.paste_frames" => !app.s.frame_clipboard.is_empty(),
         "tween.add_hint" => app.s.active_layer().and_then(|l| l.hint_tween_at(app.s.frame)).is_some(),
-        "tween.clear_hints" => app.s.active_layer().and_then(|l| l.hint_tween_at(app.s.frame).and_then(|(i, _)| l.keyframes.get(i))).is_some_and(|k| !k.hints.is_empty()),
-        "timeline.remove_frame" | "timeline.create_tween" | "timeline.create_shape_tween" => app.s.active_layer().is_some_and(|l| l.keyframe_at(app.s.frame).is_some()),
+        "tween.clear_hints" => {
+            app.s.active_layer().and_then(|l| l.hint_tween_at(app.s.frame).and_then(|(i, _)| l.keyframes.get(i))).is_some_and(|k| !k.hints.is_empty())
+        }
+        "timeline.remove_frame" | "timeline.create_tween" | "timeline.create_shape_tween" => {
+            app.s.active_layer().is_some_and(|l| l.keyframe_at(app.s.frame).is_some())
+        }
         _ => true,
     }
 }
@@ -453,7 +484,10 @@ fn checked(app: &App, id: &str) -> Option<bool> {
 
 fn item(app: &mut App, ui: &mut egui::Ui, spec: &CommandSpec) {
     let label = match spec.id {
-        "edit.undo" => app.s.undo_label().map_or_else(|| crate::i18n::t_cmd(spec.id, spec.label).to_string(), |l| tr!("Undo {action}", action = crate::i18n::t_dyn(l))),
+        "edit.undo" => app
+            .s
+            .undo_label()
+            .map_or_else(|| crate::i18n::t_cmd(spec.id, spec.label).to_string(), |l| tr!("Undo {action}", action = crate::i18n::t_dyn(l))),
         _ => crate::i18n::t_cmd(spec.id, spec.label).to_string(),
     };
     // Settings show whether they are on, as check items do.
@@ -657,7 +691,12 @@ pub(crate) fn menu_contents(app: &mut App, ui: &mut egui::Ui, top: &str, cmds: &
             if ui_item(ui, tr!("Library"), "", Some(app.explorer.tab == DockTab::Library)) {
                 app.explorer.tab = DockTab::Library;
             }
-            if ui_item(ui, tr!("Movie Explorer"), app.keymap.primary("view.movie_explorer").unwrap_or(""), Some(app.explorer.tab == DockTab::Explorer)) {
+            if ui_item(
+                ui,
+                tr!("Movie Explorer"),
+                app.keymap.primary("view.movie_explorer").unwrap_or(""),
+                Some(app.explorer.tab == DockTab::Explorer),
+            ) {
                 crate::movie_explorer::open(app);
             }
             // Brush presets with previews, and your own (ADR 0068).
@@ -696,7 +735,10 @@ pub(crate) fn menu_contents(app: &mut App, ui: &mut egui::Ui, top: &str, cmds: &
             if ui_item(ui, tr!("About AniCraft"), "", None) {
                 app.show_about = true;
             }
-            ui.label(text(Type::Caption, trn!("{n} command is scriptable with anicraft-cli", "{n} commands are scriptable with anicraft-cli", cmds.len())));
+            ui.label(text(
+                Type::Caption,
+                trn!("{n} command is scriptable with anicraft-cli", "{n} commands are scriptable with anicraft-cli", cmds.len()),
+            ));
         }
         _ => {}
     }

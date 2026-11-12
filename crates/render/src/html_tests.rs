@@ -1,18 +1,39 @@
 use super::*;
 use anicraft_doc::actions::{ButtonEvent, EventHandler, PluginScript, Property, Target};
 use anicraft_doc::player::{Event, NoScripts, PlayerState, start, step};
-use anicraft_doc::{ColorEffect, ColorTransform, ElementId, GradientStop, Keyframe, LayerId, LoopMode, Scene, Shape, Symbol, Tween, evaluate_player, sample};
+use anicraft_doc::{
+    ColorEffect, ColorTransform, ElementId, GradientStop, Keyframe, LayerId, LoopMode, Scene, Shape, Symbol, Tween, evaluate_player, sample,
+};
 use anicraft_geom::Vec2;
 use boa_engine::{Context, Source};
 
 // ----- fixtures ---------------------------------------------------------------------------------
 
 fn rect(id: u64, x: f32, y: f32, w: f32, h: f32, c: u32) -> Arc<Element> {
-    Arc::new(Element { id: ElementId(id), name: String::new(), transform: Affine::IDENTITY, color: ColorEffect::default(), kind: ElementKind::Shape(Shape::filled(Path::rect(x, y, w, h), Paint::Solid(Rgba::hex(c)))) })
+    Arc::new(Element {
+        id: ElementId(id),
+        name: String::new(),
+        transform: Affine::IDENTITY,
+        color: ColorEffect::default(),
+        kind: ElementKind::Shape(Shape::filled(Path::rect(x, y, w, h), Paint::Solid(Rgba::hex(c)))),
+    })
 }
 
 fn inst(id: u64, symbol: u64, name: &str, m: Affine, events: Vec<EventHandler>) -> Arc<Element> {
-    Arc::new(Element { id: ElementId(id), name: name.into(), transform: m, color: ColorEffect::default(), kind: ElementKind::Symbol { symbol: SymbolId(symbol), loop_mode: LoopMode::Loop, first_frame: 0, blend: BlendMode::Normal, filters: Vec::new(), events } })
+    Arc::new(Element {
+        id: ElementId(id),
+        name: name.into(),
+        transform: m,
+        color: ColorEffect::default(),
+        kind: ElementKind::Symbol {
+            symbol: SymbolId(symbol),
+            loop_mode: LoopMode::Loop,
+            first_frame: 0,
+            blend: BlendMode::Normal,
+            filters: Vec::new(),
+            events,
+        },
+    })
 }
 
 fn kf(start: u32, duration: u32, elements: Vec<Arc<Element>>, actions: Vec<Action>, label: &str) -> Arc<Keyframe> {
@@ -36,7 +57,15 @@ fn layer(id: u64, keys: Vec<Arc<Keyframe>>) -> Arc<Layer> {
 }
 
 fn symbol(id: u64, kind: SymbolKind, layers: Vec<Arc<Layer>>) -> Arc<Symbol> {
-    Arc::new(Symbol { id: SymbolId(id), name: format!("S{id}"), kind, linkage: None, scale_grid_kept: None, scale_grid: None, timeline: Timeline { layers } })
+    Arc::new(Symbol {
+        id: SymbolId(id),
+        name: format!("S{id}"),
+        kind,
+        linkage: None,
+        scale_grid_kept: None,
+        scale_grid: None,
+        timeline: Timeline { layers },
+    })
 }
 
 fn this() -> Target {
@@ -52,29 +81,93 @@ fn on(event: ButtonEvent, actions: Vec<Action>) -> EventHandler {
 /// fades it on hover, a nested clip addressed by a dotted path, a looping graphic under a mask,
 /// a faded group, a gradient, a target that doesn't exist, and a second scene that goes back.
 fn fixture() -> Document {
-    let mut d = Document { stage: anicraft_doc::Stage { width: 640, height: 360, fps: 24.0, background: Rgba::hex(0x223344) }, ..Document::default() };
+    let mut d =
+        Document { stage: anicraft_doc::Stage { width: 640, height: 360, fps: 24.0, background: Rgba::hex(0x223344) }, ..Document::default() };
     // The door: closed (stop), opening (a slide), open (stop, trace).
     let slide_a = rect(1001, 0.0, 0.0, 80.0, 120.0, 0x8b5a2b);
     let mut slide_b = (*slide_a).clone();
     slide_b.transform = Affine::translate(60.0, 0.0);
-    let door = symbol(100, SymbolKind::MovieClip, vec![
-        layer(101, vec![kf(0, 1, vec![], vec![Action::Stop { target: this() }], "closed"), kf(1, 4, vec![], vec![], "opening"), kf(5, 1, vec![], vec![Action::Stop { target: this() }, Action::Trace { message: "door open".into() }], "open")]),
-        layer(102, vec![kf(0, 1, vec![slide_a.clone()], vec![], ""), tweened(kf(1, 4, vec![slide_a], vec![], "")), kf(5, 1, vec![Arc::new(slide_b)], vec![], "")]),
-    ]);
+    let door = symbol(
+        100,
+        SymbolKind::MovieClip,
+        vec![
+            layer(
+                101,
+                vec![
+                    kf(0, 1, vec![], vec![Action::Stop { target: this() }], "closed"),
+                    kf(1, 4, vec![], vec![], "opening"),
+                    kf(5, 1, vec![], vec![Action::Stop { target: this() }, Action::Trace { message: "door open".into() }], "open"),
+                ],
+            ),
+            layer(
+                102,
+                vec![
+                    kf(0, 1, vec![slide_a.clone()], vec![], ""),
+                    tweened(kf(1, 4, vec![slide_a], vec![], "")),
+                    kf(5, 1, vec![Arc::new(slide_b)], vec![], ""),
+                ],
+            ),
+        ],
+    );
     // The knob: Up, Over, Down, Hit.
-    let knob = symbol(200, SymbolKind::Button, vec![layer(201, vec![kf(0, 1, vec![rect(2001, -20.0, -20.0, 40.0, 40.0, 0x3d8bfd)], vec![], ""), kf(1, 1, vec![rect(2002, -20.0, -20.0, 40.0, 40.0, 0x6aa8ff)], vec![], ""), kf(2, 1, vec![rect(2003, -20.0, -20.0, 40.0, 40.0, 0x2a64c0)], vec![], ""), kf(3, 1, vec![rect(2004, -25.0, -25.0, 50.0, 50.0, 0)], vec![], "")])]);
+    let knob = symbol(
+        200,
+        SymbolKind::Button,
+        vec![layer(
+            201,
+            vec![
+                kf(0, 1, vec![rect(2001, -20.0, -20.0, 40.0, 40.0, 0x3d8bfd)], vec![], ""),
+                kf(1, 1, vec![rect(2002, -20.0, -20.0, 40.0, 40.0, 0x6aa8ff)], vec![], ""),
+                kf(2, 1, vec![rect(2003, -20.0, -20.0, 40.0, 40.0, 0x2a64c0)], vec![], ""),
+                kf(3, 1, vec![rect(2004, -25.0, -25.0, 50.0, 50.0, 0)], vec![], ""),
+            ],
+        )],
+    );
     // A looping three-frame graphic.
     let mut red = (*rect(3001, 0.0, 0.0, 30.0, 30.0, 0xff0000)).clone();
     red.color = ColorEffect::Brightness(0.2).with_alpha(0.8);
-    let blink = symbol(300, SymbolKind::Graphic, vec![layer(301, vec![kf(0, 1, vec![Arc::new(red)], vec![], ""), kf(1, 1, vec![rect(3002, 0.0, 0.0, 30.0, 30.0, 0x00ff00)], vec![], ""), kf(2, 1, vec![rect(3003, 0.0, 0.0, 30.0, 30.0, 0x0000ff)], vec![], "")])]);
+    let blink = symbol(
+        300,
+        SymbolKind::Graphic,
+        vec![layer(
+            301,
+            vec![
+                kf(0, 1, vec![Arc::new(red)], vec![], ""),
+                kf(1, 1, vec![rect(3002, 0.0, 0.0, 30.0, 30.0, 0x00ff00)], vec![], ""),
+                kf(2, 1, vec![rect(3003, 0.0, 0.0, 30.0, 30.0, 0x0000ff)], vec![], ""),
+            ],
+        )],
+    );
     // A panel clip holding its own door (panel.door), that plays on and talks to its parent.
-    let panel = symbol(400, SymbolKind::MovieClip, vec![
-        layer(401, vec![kf(0, 2, vec![], vec![], ""), kf(2, 2, vec![], vec![Action::Trace { message: "panel frame 3".into() }, Action::SetProperty { target: Target::new("parent.door"), property: Property::X, value: 250.0 }], "")]),
-        layer(402, vec![kf(0, 4, vec![inst(4001, 100, "door", Affine::translate(10.0, 10.0), vec![])], vec![], "")]),
-    ]);
+    let panel = symbol(
+        400,
+        SymbolKind::MovieClip,
+        vec![
+            layer(
+                401,
+                vec![
+                    kf(0, 2, vec![], vec![], ""),
+                    kf(
+                        2,
+                        2,
+                        vec![],
+                        vec![
+                            Action::Trace { message: "panel frame 3".into() },
+                            Action::SetProperty { target: Target::new("parent.door"), property: Property::X, value: 250.0 },
+                        ],
+                        "",
+                    ),
+                ],
+            ),
+            layer(402, vec![kf(0, 4, vec![inst(4001, 100, "door", Affine::translate(10.0, 10.0), vec![])], vec![], "")]),
+        ],
+    );
     d.library = vec![door, knob, blink, panel];
 
-    let open_door = vec![Action::GotoAndPlay { target: Target::new("door"), frame: FrameRef::Label("opening".into()), scene: None }, Action::Play { target: Target::new("panel.door") }];
+    let open_door = vec![
+        Action::GotoAndPlay { target: Target::new("door"), frame: FrameRef::Label("opening".into()), scene: None },
+        Action::Play { target: Target::new("panel.door") },
+    ];
     let knob_events = vec![
         on(ButtonEvent::Click, open_door),
         on(ButtonEvent::Over, vec![Action::SetProperty { target: Target::new("door"), property: Property::Alpha, value: 0.5 }]),
@@ -90,7 +183,17 @@ fn fixture() -> Document {
         name: String::new(),
         transform: Affine::translate(20.0, 300.0),
         color: ColorEffect::Tint { color: Rgba::hex(0xff00ff), amount: 0.25 },
-        kind: ElementKind::Shape(Shape::filled(Path::rect(0.0, 0.0, 100.0, 40.0), Paint::Linear { start: Vec2::new(0.0, 0.0), end: Vec2::new(100.0, 0.0), stops: vec![GradientStop { offset: 0.0, color: Rgba::hex(0xffffff) }, GradientStop { offset: 1.0, color: Rgba::hex(0x000000) }] }).with_stroke(Rgba::hex(0xffff00), 2.0)),
+        kind: ElementKind::Shape(
+            Shape::filled(
+                Path::rect(0.0, 0.0, 100.0, 40.0),
+                Paint::Linear {
+                    start: Vec2::new(0.0, 0.0),
+                    end: Vec2::new(100.0, 0.0),
+                    stops: vec![GradientStop { offset: 0.0, color: Rgba::hex(0xffffff) }, GradientStop { offset: 1.0, color: Rgba::hex(0x000000) }],
+                },
+            )
+            .with_stroke(Rgba::hex(0xffff00), 2.0),
+        ),
     });
     let mut mask = Layer::new(LayerId(6), "mask");
     mask.kind = LayerKind::Mask;
@@ -99,20 +202,43 @@ fn fixture() -> Document {
     masked.parent = Some(LayerId(6));
     masked.keyframes = vec![kf(0, 30, vec![inst(5006, 300, "", Affine::translate(395.0, 30.0), vec![])], vec![], "")];
     d.timeline_mut(0).layers = vec![
-        layer(1, vec![
-            kf(0, 3, vec![], vec![Action::Trace { message: "start".into() }], ""),
-            kf(3, 7, vec![], vec![Action::Stop { target: Target::new("ghost") }, Action::Stop { target: Target::new("panel") }], "mid"),
-            kf(10, 20, vec![], vec![], ""),
-            kf(29, 1, vec![], vec![Action::GotoAndPlay { target: this(), frame: FrameRef::Label("back".into()), scene: None }], ""),
-        ]),
+        layer(
+            1,
+            vec![
+                kf(0, 3, vec![], vec![Action::Trace { message: "start".into() }], ""),
+                kf(3, 7, vec![], vec![Action::Stop { target: Target::new("ghost") }, Action::Stop { target: Target::new("panel") }], "mid"),
+                kf(10, 20, vec![], vec![], ""),
+                kf(29, 1, vec![], vec![Action::GotoAndPlay { target: this(), frame: FrameRef::Label("back".into()), scene: None }], ""),
+            ],
+        ),
         layer(2, vec![kf(0, 30, vec![inst(5001, 200, "knob", Affine::translate(100.0, 100.0), knob_events)], vec![], "")]),
-        layer(3, vec![kf(0, 30, vec![inst(5002, 100, "door", Affine::translate(300.0, 100.0), vec![]), inst(5007, 400, "panel", Affine::translate(300.0, 240.0), vec![]), Arc::new(faded), gradient], vec![], "")]),
+        layer(
+            3,
+            vec![kf(
+                0,
+                30,
+                vec![
+                    inst(5002, 100, "door", Affine::translate(300.0, 100.0), vec![]),
+                    inst(5007, 400, "panel", Affine::translate(300.0, 240.0), vec![]),
+                    Arc::new(faded),
+                    gradient,
+                ],
+                vec![],
+                "",
+            )],
+        ),
         Arc::new(mask),
         Arc::new(masked),
     ];
     // Scene 2 has the "back" label and returns to the first scene's "mid".
     let mut two = Scene::new("Two");
-    two.timeline.layers = vec![layer(8, vec![kf(0, 2, vec![rect(6001, 0.0, 0.0, 640.0, 360.0, 0x112233)], vec![], "back"), kf(2, 1, vec![], vec![Action::GotoAndStop { target: this(), frame: FrameRef::Label("mid".into()), scene: Some("scene 1".into()) }], "")])];
+    two.timeline.layers = vec![layer(
+        8,
+        vec![
+            kf(0, 2, vec![rect(6001, 0.0, 0.0, 640.0, 360.0, 0x112233)], vec![], "back"),
+            kf(2, 1, vec![], vec![Action::GotoAndStop { target: this(), frame: FrameRef::Label("mid".into()), scene: Some("scene 1".into()) }], ""),
+        ],
+    )];
     d.scenes.push(Arc::new(two));
     d.next_id = 10_000;
     d.sanitize();
@@ -166,7 +292,18 @@ impl Js {
         let mut ctx = Context::default();
         ctx.eval(Source::from_bytes(PLAYER_JS)).unwrap_or_else(|e| panic!("player.js: {e}"));
         ctx.eval(Source::from_bytes(HOST_JS)).unwrap();
-        let polys: Vec<Value> = m.paths.iter().map(|p| Value::Array(p.flatten(&Affine::IDENTITY, 0.05).into_iter().map(|l| json!({"c": l.closed, "p": l.points.iter().map(|q| json!([q.x, q.y])).collect::<Vec<_>>()})).collect())).collect();
+        let polys: Vec<Value> = m
+            .paths
+            .iter()
+            .map(|p| {
+                Value::Array(
+                    p.flatten(&Affine::IDENTITY, 0.05)
+                        .into_iter()
+                        .map(|l| json!({"c": l.closed, "p": l.points.iter().map(|q| json!([q.x, q.y])).collect::<Vec<_>>()}))
+                        .collect(),
+                )
+            })
+            .collect();
         let setup = format!("var POLYS = {}; var P = new AniCraft.Player({}, host);", Value::Array(polys), m.json);
         ctx.eval(Source::from_bytes(&setup)).unwrap_or_else(|e| panic!("setup: {e}"));
         Js { ctx }
@@ -230,7 +367,11 @@ fn props_of_rust(st: &PlayerState) -> Vec<String> {
     let mut out = Vec::new();
     for (p, o) in &st.props {
         let f = |k: &str, v: Option<f32>| v.map(|v| format!("{}:{k}={:.3}", ids(p), v));
-        out.extend([f("x", o.x), f("y", o.y), f("alpha", o.alpha), f("rotation", o.rotation), f("scale_x", o.scale_x), f("scale_y", o.scale_y)].into_iter().flatten());
+        out.extend(
+            [f("x", o.x), f("y", o.y), f("alpha", o.alpha), f("rotation", o.rotation), f("scale_x", o.scale_x), f("scale_y", o.scale_y)]
+                .into_iter()
+                .flatten(),
+        );
         if let Some(v) = o.visible {
             out.push(format!("{}:visible={v}", ids(p)));
         }
@@ -377,10 +518,23 @@ fn the_js_player_matches_on_the_demo_and_on_go_to_loops() {
     compare(&demo, &vec![(vec![], vec![]); 60]);
     // A frame that goes to itself and back runs into the budget, in both players alike.
     let mut d = Document::default();
-    d.timeline_mut(0).layers = vec![layer(1, vec![
-        kf(0, 1, vec![], vec![Action::GotoAndPlay { target: this(), frame: FrameRef::Number(1), scene: None }], ""),
-        kf(1, 1, vec![], vec![Action::GotoAndPlay { target: this(), frame: FrameRef::Number(0), scene: None }, Action::SetProperty { target: this(), property: Property::X, value: 1.0 }, Action::NextFrame { target: Target::new("_root.nobody") }], ""),
-    ])];
+    d.timeline_mut(0).layers = vec![layer(
+        1,
+        vec![
+            kf(0, 1, vec![], vec![Action::GotoAndPlay { target: this(), frame: FrameRef::Number(1), scene: None }], ""),
+            kf(
+                1,
+                1,
+                vec![],
+                vec![
+                    Action::GotoAndPlay { target: this(), frame: FrameRef::Number(0), scene: None },
+                    Action::SetProperty { target: this(), property: Property::X, value: 1.0 },
+                    Action::NextFrame { target: Target::new("_root.nobody") },
+                ],
+                "",
+            ),
+        ],
+    )];
     d.sanitize();
     compare(&d, &vec![(vec![], vec![]); 3]);
 }
@@ -468,7 +622,15 @@ fn frames_are_baked_and_stored_once() {
     assert!(m.stats.paths < 40, "{:?}", m.stats);
     // Unused library symbols stay out.
     let mut d = doc.clone();
-    d.library.push(Arc::new(Symbol { id: SymbolId(999_999), name: "unused".into(), kind: SymbolKind::Graphic, linkage: None, scale_grid_kept: None, scale_grid: None, timeline: Timeline::default() }));
+    d.library.push(Arc::new(Symbol {
+        id: SymbolId(999_999),
+        name: "unused".into(),
+        kind: SymbolKind::Graphic,
+        linkage: None,
+        scale_grid_kept: None,
+        scale_grid: None,
+        timeline: Timeline::default(),
+    }));
     assert_eq!(movie(&d, &HtmlOptions::default()).json["symbols"], m.json["symbols"]);
 }
 
@@ -476,8 +638,20 @@ fn frames_are_baked_and_stored_once() {
 fn variable_width_strokes_become_filled_outlines() {
     use anicraft_doc::{ProfilePreset, Stroke};
     let mut doc = Document::default();
-    let shape = Shape { path: Arc::new(Path::line(Vec2::new(10.0, 10.0), Vec2::new(200.0, 10.0))), fill: None, stroke: Some(Stroke::new(Rgba::hex(0x00ff00), 10.0).with_profile(ProfilePreset::TaperEnd.profile())), fill_rule: FillRule::NonZero, merge: false };
-    let el = Element { id: ElementId(77), name: String::new(), transform: Affine::translate(5.0, 0.0), color: Default::default(), kind: ElementKind::Shape(shape) };
+    let shape = Shape {
+        path: Arc::new(Path::line(Vec2::new(10.0, 10.0), Vec2::new(200.0, 10.0))),
+        fill: None,
+        stroke: Some(Stroke::new(Rgba::hex(0x00ff00), 10.0).with_profile(ProfilePreset::TaperEnd.profile())),
+        fill_rule: FillRule::NonZero,
+        merge: false,
+    };
+    let el = Element {
+        id: ElementId(77),
+        name: String::new(),
+        transform: Affine::translate(5.0, 0.0),
+        color: Default::default(),
+        kind: ElementKind::Shape(shape),
+    };
     Arc::make_mut(&mut doc.timeline_mut(0).layers[0]).keyframe_mut(0).unwrap().elements.push(Arc::new(el));
     let m = movie(&doc, &HtmlOptions::default());
     let items = &m.json["contents"][0]["l"][0]["e"];
@@ -490,11 +664,28 @@ fn variable_width_strokes_become_filled_outlines() {
 fn stroke_caps_joins_and_dashes_reach_the_page() {
     use anicraft_doc::{Cap, Dash, Join, Stroke, StrokeStyle};
     let mut doc = Document::default();
-    let style = StrokeStyle { cap: Cap::Butt, join: Join::Miter, miter_limit: 6.0, dash: Some(Dash::Dashed { lengths: vec![4.0, 1.5].into(), offset: 1.0 }) };
-    let line = |y: f32, st: Stroke| Shape { path: Arc::new(Path::line(Vec2::new(10.0, y), Vec2::new(200.0, y))), fill: None, stroke: Some(st), fill_rule: FillRule::NonZero, merge: false };
-    let shapes = [line(10.0, Stroke::new(Rgba::BLACK, 3.0)), line(30.0, Stroke::new(Rgba::BLACK, 3.0).with_style(style)), line(50.0, Stroke::new(Rgba::BLACK, 3.0).with_style(StrokeStyle { dash: Dash::dotted(2.0), ..StrokeStyle::default() }))];
+    let style =
+        StrokeStyle { cap: Cap::Butt, join: Join::Miter, miter_limit: 6.0, dash: Some(Dash::Dashed { lengths: vec![4.0, 1.5].into(), offset: 1.0 }) };
+    let line = |y: f32, st: Stroke| Shape {
+        path: Arc::new(Path::line(Vec2::new(10.0, y), Vec2::new(200.0, y))),
+        fill: None,
+        stroke: Some(st),
+        fill_rule: FillRule::NonZero,
+        merge: false,
+    };
+    let shapes = [
+        line(10.0, Stroke::new(Rgba::BLACK, 3.0)),
+        line(30.0, Stroke::new(Rgba::BLACK, 3.0).with_style(style)),
+        line(50.0, Stroke::new(Rgba::BLACK, 3.0).with_style(StrokeStyle { dash: Dash::dotted(2.0), ..StrokeStyle::default() })),
+    ];
     for (i, sh) in shapes.into_iter().enumerate() {
-        let el = Element { id: ElementId(70 + i as u64), name: String::new(), transform: Affine::scale(2.0, 2.0), color: Default::default(), kind: ElementKind::Shape(sh) };
+        let el = Element {
+            id: ElementId(70 + i as u64),
+            name: String::new(),
+            transform: Affine::scale(2.0, 2.0),
+            color: Default::default(),
+            kind: ElementKind::Shape(sh),
+        };
         Arc::make_mut(&mut doc.timeline_mut(0).layers[0]).keyframe_mut(0).unwrap().elements.push(Arc::new(el));
     }
     let m = movie(&doc, &HtmlOptions::default());
@@ -523,9 +714,12 @@ fn what_does_not_carry_across_is_reported() {
         filters.push(anicraft_doc::Filter::Blur { blur_x: 4.0, blur_y: 4.0, quality: 1 });
         *blend = BlendMode::Subtract;
     }
-    Arc::make_mut(&mut tl.layers[0]).keyframe_mut(1).unwrap().script = Some(FrameScript::Plugin(PluginScript { id: "org.example.menu".into(), entry: "main".into() }));
+    Arc::make_mut(&mut tl.layers[0]).keyframe_mut(1).unwrap().script =
+        Some(FrameScript::Plugin(PluginScript { id: "org.example.menu".into(), entry: "main".into() }));
     // A 9-slice symbol, scaled: the page scales it as a whole (ADR 0055).
-    let ElementKind::Symbol { symbol: sym, .. } = doc.timeline(0).layers[2].keyframes[0].elements[0].kind else { panic!("the fixture's third layer holds an instance") };
+    let ElementKind::Symbol { symbol: sym, .. } = doc.timeline(0).layers[2].keyframes[0].elements[0].kind else {
+        panic!("the fixture's third layer holds an instance")
+    };
     if let Some(x) = doc.library.iter_mut().find(|x| x.id == sym) {
         Arc::make_mut(x).scale_grid = Some(anicraft_doc::ScaleGrid { left: 1.0, right: 2.0, top: 1.0, bottom: 2.0 });
     }
@@ -561,7 +755,13 @@ fn bitmaps_and_sounds_are_embedded_once() {
     let wav = anicraft_doc::audio::wav::encode(8000, 1, &[0.0; 80], anicraft_doc::audio::wav::Bits::Int16);
     doc.sounds.push(Arc::new(anicraft_doc::Sound::from_data(anicraft_doc::SoundId(60), "beep", wav).unwrap()));
     let fill = Paint::Bitmap { bitmap: anicraft_doc::BitmapId(50), repeat: true, matrix: Affine::scale(2.0, 2.0) };
-    let a = Element { id: ElementId(70), name: String::new(), transform: Affine::IDENTITY, color: Default::default(), kind: ElementKind::Shape(Shape::filled(Path::rect(0.0, 0.0, 10.0, 10.0), fill.clone())) };
+    let a = Element {
+        id: ElementId(70),
+        name: String::new(),
+        transform: Affine::IDENTITY,
+        color: Default::default(),
+        kind: ElementKind::Shape(Shape::filled(Path::rect(0.0, 0.0, 10.0, 10.0), fill.clone())),
+    };
     let b = Element { id: ElementId(71), kind: ElementKind::Shape(Shape::filled(Path::rect(20.0, 0.0, 10.0, 10.0), fill)), ..a.clone() };
     {
         let k = Arc::make_mut(&mut doc.timeline_mut(0).layers[0]).keyframe_mut(0).unwrap();
@@ -610,12 +810,48 @@ fn sounds_carry_their_envelopes_and_volumes_and_start_in_graphics_and_clips_as_i
         l.volume = volume;
         Arc::new(l)
     };
-    let inst = |id, symbol| Arc::new(Element { id: ElementId(id), name: String::new(), transform: Affine::IDENTITY, color: Default::default(), kind: ElementKind::Symbol { symbol: SymbolId(symbol), loop_mode: Default::default(), first_frame: 0, blend: Default::default(), filters: Vec::new(), events: Vec::new() } });
+    let inst = |id, symbol| {
+        Arc::new(Element {
+            id: ElementId(id),
+            name: String::new(),
+            transform: Affine::IDENTITY,
+            color: Default::default(),
+            kind: ElementKind::Symbol {
+                symbol: SymbolId(symbol),
+                loop_mode: Default::default(),
+                first_frame: 0,
+                blend: Default::default(),
+                filters: Vec::new(),
+                events: Vec::new(),
+            },
+        })
+    };
     // A graphic with a fading sound on its frame 1 (of 2), a clip with a left-channel one on its
     // frame 0 (of 3), both on a layer at half volume; a sound of the main timeline's own.
-    doc.library.push(Arc::new(Symbol { linkage: None, scale_grid_kept: None, scale_grid: None, id: SymbolId(20), name: "g".into(), kind: SymbolKind::Graphic, timeline: Timeline { layers: vec![layer(21, vec![key(0, 1, None, vec![]), key(1, 1, snd(SoundSync::Event, SoundEffect::FadeOut), vec![])], 1.0)] } }));
-    doc.library.push(Arc::new(Symbol { linkage: None, scale_grid_kept: None, scale_grid: None, id: SymbolId(30), name: "c".into(), kind: SymbolKind::MovieClip, timeline: Timeline { layers: vec![layer(31, vec![key(0, 3, snd(SoundSync::Stream, SoundEffect::LeftChannel), vec![])], 0.5)] } }));
-    doc.timeline_mut(0).layers = vec![layer(1, vec![key(0, 6, snd(SoundSync::Event, SoundEffect::None), vec![])], 1.0), layer(2, vec![key(0, 6, None, vec![inst(40, 20), inst(41, 30)])], 0.5)];
+    doc.library.push(Arc::new(Symbol {
+        linkage: None,
+        scale_grid_kept: None,
+        scale_grid: None,
+        id: SymbolId(20),
+        name: "g".into(),
+        kind: SymbolKind::Graphic,
+        timeline: Timeline {
+            layers: vec![layer(21, vec![key(0, 1, None, vec![]), key(1, 1, snd(SoundSync::Event, SoundEffect::FadeOut), vec![])], 1.0)],
+        },
+    }));
+    doc.library.push(Arc::new(Symbol {
+        linkage: None,
+        scale_grid_kept: None,
+        scale_grid: None,
+        id: SymbolId(30),
+        name: "c".into(),
+        kind: SymbolKind::MovieClip,
+        timeline: Timeline { layers: vec![layer(31, vec![key(0, 3, snd(SoundSync::Stream, SoundEffect::LeftChannel), vec![])], 0.5)] },
+    }));
+    doc.timeline_mut(0).layers = vec![
+        layer(1, vec![key(0, 6, snd(SoundSync::Event, SoundEffect::None), vec![])], 1.0),
+        layer(2, vec![key(0, 6, None, vec![inst(40, 20), inst(41, 30)])], 0.5),
+    ];
     let m = movie(&doc, &HtmlOptions::default());
     // The fade's points span one play (half a second); the clip's span its 3 frames.
     let g_tl = m.json["symbols"].as_array().unwrap().iter().find(|s| s["name"] == "g").unwrap()["tl"].as_u64().unwrap() as usize;
@@ -650,10 +886,27 @@ fn button_sounds_start_in_the_page_as_in_the_player() {
         k.sound = Some(FrameSound { sync, ..FrameSound::new(SoundId(60 + i)) });
         Arc::new(k)
     };
-    let mut sounds = (*layer(34, vec![with(kf(0, 1, vec![], vec![], ""), 0, SoundSync::Event), with(kf(1, 1, vec![], vec![], ""), 1, SoundSync::Stream), with(kf(2, 1, vec![], vec![], ""), 2, SoundSync::Event), with(kf(3, 1, vec![], vec![], ""), 3, SoundSync::Event)])).clone();
+    let mut sounds = (*layer(
+        34,
+        vec![
+            with(kf(0, 1, vec![], vec![], ""), 0, SoundSync::Event),
+            with(kf(1, 1, vec![], vec![], ""), 1, SoundSync::Stream),
+            with(kf(2, 1, vec![], vec![], ""), 2, SoundSync::Event),
+            with(kf(3, 1, vec![], vec![], ""), 3, SoundSync::Event),
+        ],
+    ))
+    .clone();
     sounds.volume = 0.5;
     let art = || vec![rect(32, 0.0, 0.0, 10.0, 10.0, 0x336699)];
-    let states = layer(31, vec![kf(0, 1, art(), vec![], ""), kf(1, 1, art(), vec![], ""), kf(2, 1, art(), vec![], ""), kf(3, 1, vec![rect(33, 0.0, 0.0, 100.0, 100.0, 0)], vec![], "")]);
+    let states = layer(
+        31,
+        vec![
+            kf(0, 1, art(), vec![], ""),
+            kf(1, 1, art(), vec![], ""),
+            kf(2, 1, art(), vec![], ""),
+            kf(3, 1, vec![rect(33, 0.0, 0.0, 100.0, 100.0, 0)], vec![], ""),
+        ],
+    );
     d.library.push(symbol(300, SymbolKind::Button, vec![Arc::new(sounds), states]));
     let mut holder = (*layer(2, vec![kf(0, 4, vec![inst(3, 300, "go", Affine::translate(100.0, 100.0), vec![])], vec![], "")])).clone();
     holder.volume = 0.5;
@@ -679,9 +932,15 @@ fn button_sounds_start_in_the_page_as_in_the_player() {
     let mut heard = Vec::new();
     for (i, events) in batches.iter().enumerate() {
         // Between frames and with a frame, alike.
-        let (rs, page) = if i % 2 == 0 { (anicraft_doc::player::input(&d, &r.state, events, &mut NoScripts), js.eval(&format!("P.input({}).sounds", js_events(events)))) } else { (step(&d, &r.state, events, &mut NoScripts), js.eval(&format!("P.step({}).sounds", js_events(events)))) };
-        let theirs: Vec<Value> = rs.sounds.iter().map(|s| json!([d.sound(s.sound.sound).unwrap().name, s.sound.sync.key(), f64::from(s.gain)])).collect();
-        let ours: Vec<Value> = page.as_array().unwrap().iter().map(|s| json!([names[s[0].as_u64().unwrap() as usize], s[1], s[5].as_f64()])).collect();
+        let (rs, page) = if i % 2 == 0 {
+            (anicraft_doc::player::input(&d, &r.state, events, &mut NoScripts), js.eval(&format!("P.input({}).sounds", js_events(events))))
+        } else {
+            (step(&d, &r.state, events, &mut NoScripts), js.eval(&format!("P.step({}).sounds", js_events(events))))
+        };
+        let theirs: Vec<Value> =
+            rs.sounds.iter().map(|s| json!([d.sound(s.sound.sound).unwrap().name, s.sound.sync.key(), f64::from(s.gain)])).collect();
+        let ours: Vec<Value> =
+            page.as_array().unwrap().iter().map(|s| json!([names[s[0].as_u64().unwrap() as usize], s[1], s[5].as_f64()])).collect();
         assert_eq!(ours, theirs, "batch {i}");
         heard.extend(theirs);
         r = rs;
@@ -694,7 +953,16 @@ fn button_sounds_start_in_the_page_as_in_the_player() {
 #[test]
 fn hostile_documents_export_without_panicking() {
     let mut doc = Document::default();
-    let bad = Element { id: ElementId(5), name: "x".into(), transform: Affine { m: [f32::NAN, 0.0, 0.0, 1.0, f32::INFINITY, 0.0] }, color: ColorEffect::Advanced(ColorTransform { mul: [f32::NAN, 2.0, -1.0, f32::INFINITY], add: [f32::NAN, 0.0, 0.0, 0.0] }), kind: ElementKind::Shape(Shape::filled(Path::rect(0.0, 0.0, f32::NAN, 1.0), Paint::Radial { center: Vec2::ZERO, radius: -5.0, stops: vec![GradientStop { offset: f32::NAN, color: Rgba::BLACK }] })) };
+    let bad = Element {
+        id: ElementId(5),
+        name: "x".into(),
+        transform: Affine { m: [f32::NAN, 0.0, 0.0, 1.0, f32::INFINITY, 0.0] },
+        color: ColorEffect::Advanced(ColorTransform { mul: [f32::NAN, 2.0, -1.0, f32::INFINITY], add: [f32::NAN, 0.0, 0.0, 0.0] }),
+        kind: ElementKind::Shape(Shape::filled(
+            Path::rect(0.0, 0.0, f32::NAN, 1.0),
+            Paint::Radial { center: Vec2::ZERO, radius: -5.0, stops: vec![GradientStop { offset: f32::NAN, color: Rgba::BLACK }] },
+        )),
+    };
     let fine = Element { id: ElementId(6), transform: Affine::IDENTITY, ..bad.clone() };
     let missing = inst(7, 12345, "ghost", Affine::IDENTITY, vec![]);
     Arc::make_mut(&mut doc.timeline_mut(0).layers[0]).keyframe_mut(0).unwrap().elements = vec![Arc::new(bad), Arc::new(fine), missing];
@@ -713,7 +981,8 @@ fn hostile_documents_export_without_panicking() {
 
 /// `k` with a kept ActionScript 3.0 script in place of its actions.
 fn as3(k: &mut Arc<Keyframe>, src: &str) {
-    Arc::make_mut(k).script = Some(FrameScript::Source(Arc::new(anicraft_doc::actions::SourceScript::new(anicraft_doc::actions::Language::ActionScript3, src))));
+    Arc::make_mut(k).script =
+        Some(FrameScript::Source(Arc::new(anicraft_doc::actions::SourceScript::new(anicraft_doc::actions::Language::ActionScript3, src))));
 }
 
 /// The fixture with its frame actions and the knob's handlers written as ActionScript: the
@@ -768,7 +1037,15 @@ fn the_js_player_runs_actionscript_like_the_rust_player() {
     script.push((vec![Event::Move(at(10.0, 10.0)), Event::Leave], vec![]));
     script.extend((0..30).map(|_| none()));
     let lines = compare(&doc, &script);
-    for want in ["start", "pressed", "door open", "panel 1", "Listen for click (ghost): no instance named “ghost” here", "Stop (ghost): no instance named “ghost” here", "Next scene: a movie clip's timeline has one scene; call it in the main timeline's script"] {
+    for want in [
+        "start",
+        "pressed",
+        "door open",
+        "panel 1",
+        "Listen for click (ghost): no instance named “ghost” here",
+        "Stop (ghost): no instance named “ghost” here",
+        "Next scene: a movie clip's timeline has one scene; call it in the main timeline's script",
+    ] {
         assert!(lines.iter().any(|l| l == want), "the scripted fixture never wrote {want:?}: {lines:?}");
     }
 }
@@ -778,7 +1055,17 @@ fn actionscript_plays_the_movie_its_hand_made_actions_play() {
     // The scripted fixture and the fixture write the same lines and reach the same states, but
     // for the lines only scripts write and the listeners they hold.
     let (a, b) = (fixture(), scripted());
-    let events = [vec![], vec![], vec![Event::Move(at(100.0, 100.0))], vec![Event::Down(at(101.0, 99.0))], vec![Event::Up(at(102.0, 101.0))], vec![], vec![], vec![], vec![Event::Move(at(10.0, 10.0))]];
+    let events = [
+        vec![],
+        vec![],
+        vec![Event::Move(at(100.0, 100.0))],
+        vec![Event::Down(at(101.0, 99.0))],
+        vec![Event::Up(at(102.0, 101.0))],
+        vec![],
+        vec![],
+        vec![],
+        vec![Event::Move(at(10.0, 10.0))],
+    ];
     let (mut x, mut y) = (start(&a, &mut NoScripts), start(&b, &mut NoScripts));
     let only_scripts = |l: &String| l.starts_with("Listen for") || l.starts_with("Next scene:");
     for (i, ev) in events.iter().enumerate() {
@@ -825,7 +1112,10 @@ fn logic() -> Document {
     let tl = d.timeline_mut(0);
     let l1 = Arc::make_mut(&mut tl.layers[0]);
     as3(&mut l1.keyframes[0], main);
-    as3(&mut l1.keyframes[1], "function bump(n:int):int { score += n; return score % 3 + 1; }\nlabel = label + \"!\";\ntrace(\"frame 2: \" + bump(1) + \" \" + label);\ntrace(ghost.x);\ntrace(\"never\");");
+    as3(
+        &mut l1.keyframes[1],
+        "function bump(n:int):int { score += n; return score % 3 + 1; }\nlabel = label + \"!\";\ntrace(\"frame 2: \" + bump(1) + \" \" + label);\ntrace(ghost.x);\ntrace(\"never\");",
+    );
     as3(&mut l1.keyframes[2], "var spin:int = 0; while (true) { spin++; }");
     let l2 = Arc::make_mut(&mut tl.layers[1]);
     if let ElementKind::Symbol { events, .. } = &mut Arc::make_mut(&mut Arc::make_mut(&mut l2.keyframes[0]).elements[0]).kind {
@@ -854,7 +1144,16 @@ fn the_js_player_runs_small_logic_like_the_rust_player() {
     script.push((vec![Event::Move(at(10.0, 10.0)), Event::Leave], vec![Event::KeyDown(39)]));
     script.extend((0..20).map(|_| none()));
     let lines = compare(&doc, &script);
-    for want in ["start 0 go 0 1/33 null", "6 6 7 Infinity -2 0.25 4294967337 3.5 true true true", "10 true 100 100 1 true knob 1 4", "frame 2: 2 go!", "Script on frame 4 of the main timeline stopped: line 4: no instance named “ghost” here", "stopped ticking", "up 39 true", "key 65"] {
+    for want in [
+        "start 0 go 0 1/33 null",
+        "6 6 7 Infinity -2 0.25 4294967337 3.5 true true true",
+        "10 true 100 100 1 true knob 1 4",
+        "frame 2: 2 go!",
+        "Script on frame 4 of the main timeline stopped: line 4: no instance named “ghost” here",
+        "stopped ticking",
+        "up 39 true",
+        "key 65",
+    ] {
         assert!(lines.iter().any(|l| l == want), "the logic fixture never wrote {want:?}: {lines:?}");
     }
     assert!(lines.iter().any(|l| l == "click knob true 11"), "{lines:?}");
@@ -868,7 +1167,10 @@ fn the_js_player_draws_random_numbers_like_the_rust_player() {
     for seed in [0u64, 1, 7, 0xdead_beef, u64::from(u32::MAX) + 5] {
         let mut d = Document::default();
         let k = Arc::make_mut(&mut Arc::make_mut(&mut d.timeline_mut(0).layers[0]).keyframes[0]);
-        k.script = Some(FrameScript::Source(Arc::new(anicraft_doc::actions::SourceScript::new(anicraft_doc::actions::Language::ActionScript3, "for (var i:int = 0; i < 20; i++) trace(Math.random());"))));
+        k.script = Some(FrameScript::Source(Arc::new(anicraft_doc::actions::SourceScript::new(
+            anicraft_doc::actions::Language::ActionScript3,
+            "for (var i:int = 0; i < 20; i++) trace(Math.random());",
+        ))));
         let m = movie(&d, &HtmlOptions::default());
         let rust = anicraft_doc::player::start_seeded(&d, seed, &mut NoScripts).output;
         let mut js = Js::new(&m);
@@ -881,8 +1183,29 @@ fn the_js_player_draws_random_numbers_like_the_rust_player() {
 /// (layout isn't compared: neither player lays text out here).
 fn field_el(id: u64, name: &str, at: Vec2, (w, h): (f32, f32), text: &str, f: Option<anicraft_doc::TextField>) -> Arc<Element> {
     let n = text.chars().count() as f32;
-    let t = anicraft_doc::TextBlock { text: text.into(), font: "Inter".into(), size: 14.0, bold: true, italic: false, color: Rgba::hex(0x112233), align: anicraft_doc::TextAlign::Center, letter_spacing: 0.5, line_spacing: 2.0, width: None, outline: Arc::new(Path::rect(2.0, 2.0, 8.0 * n, 12.0)), box_width: w, box_height: h, field: f };
-    Arc::new(Element { id: ElementId(id), name: name.into(), transform: Affine::translate(at.x, at.y), color: ColorEffect::default(), kind: ElementKind::Text(Arc::new(t)) })
+    let t = anicraft_doc::TextBlock {
+        text: text.into(),
+        font: "Inter".into(),
+        size: 14.0,
+        bold: true,
+        italic: false,
+        color: Rgba::hex(0x112233),
+        align: anicraft_doc::TextAlign::Center,
+        letter_spacing: 0.5,
+        line_spacing: 2.0,
+        width: None,
+        outline: Arc::new(Path::rect(2.0, 2.0, 8.0 * n, 12.0)),
+        box_width: w,
+        box_height: h,
+        field: f,
+    };
+    Arc::new(Element {
+        id: ElementId(id),
+        name: name.into(),
+        transform: Affine::translate(at.x, at.y),
+        color: ColorEffect::default(),
+        kind: ElementKind::Text(Arc::new(t)),
+    })
 }
 
 /// A movie with a dynamic field (`score_txt`, with a background and a border), an input field
@@ -892,13 +1215,19 @@ fn field_el(id: u64, name: &str, at: Vec2, (w, h): (f32, f32), text: &str, f: Op
 /// the dynamic field until a key takes the movie to a frame without the fields.
 fn fields_doc() -> Document {
     use anicraft_doc::{TextField, TextKind};
-    let mut d = Document { stage: anicraft_doc::Stage { width: 200, height: 100, fps: 24.0, background: Rgba::hex(0xffffff) }, ..Document::default() };
-    d.library = vec![symbol(100, SymbolKind::MovieClip, vec![layer(101, vec![kf(0, 1, vec![rect(1001, 0.0, 0.0, 20.0, 20.0, 0x884422)], vec![], "")])])];
+    let mut d =
+        Document { stage: anicraft_doc::Stage { width: 200, height: 100, fps: 24.0, background: Rgba::hex(0xffffff) }, ..Document::default() };
+    d.library =
+        vec![symbol(100, SymbolKind::MovieClip, vec![layer(101, vec![kf(0, 1, vec![rect(1001, 0.0, 0.0, 20.0, 20.0, 0x884422)], vec![], "")])])];
     let mut score = TextField::new(TextKind::Dynamic);
     (score.background, score.background_color, score.border, score.border_color) = (true, Rgba::hex(0xffffee), true, Rgba::hex(0x333333));
     let mut name = TextField::new(TextKind::Input);
     (name.max_chars, name.border) = (5, true);
-    let fields = vec![field_el(50, "score_txt", Vec2::new(10.0, 10.0), (100.0, 20.0), "Score", Some(score)), field_el(51, "name_txt", Vec2::new(10.0, 40.0), (120.0, 20.0), "", Some(name)), inst(52, 100, "door", Affine::translate(150.0, 60.0), vec![])];
+    let fields = vec![
+        field_el(50, "score_txt", Vec2::new(10.0, 10.0), (100.0, 20.0), "Score", Some(score)),
+        field_el(51, "name_txt", Vec2::new(10.0, 40.0), (120.0, 20.0), "", Some(name)),
+        inst(52, 100, "door", Affine::translate(150.0, 60.0), vec![]),
+    ];
     let mut scripts = layer(1, (0..8).map(|f| kf(f, 1, vec![], vec![], "")).collect());
     let main = "import flash.events.*;\n\
         score_txt.text = \"Score: \" + 1;\n\
@@ -912,7 +1241,16 @@ fn fields_doc() -> Document {
           if (e.keyCode == 39) gotoAndStop(8);\n\
           else { score_txt.text = name_txt.text + \":\" + e.keyCode; trace(score_txt.text, name_txt.length); }\n\
         }";
-    let frames = [main, "ghost_txt.text = \"x\";", "door.text = \"x\";", "trace(door.length);", "trace(root.text);", "score_txt.text = null;", "stop();\nscore_txt.gotoAndStop(1);\nscore_txt.text = \"a\\r\\nb\\rc\";\ntrace(score_txt.length);\ntrace(score_txt.currentFrame);", "trace(\"gone\");"];
+    let frames = [
+        main,
+        "ghost_txt.text = \"x\";",
+        "door.text = \"x\";",
+        "trace(door.length);",
+        "trace(root.text);",
+        "score_txt.text = null;",
+        "stop();\nscore_txt.gotoAndStop(1);\nscore_txt.text = \"a\\r\\nb\\rc\";\ntrace(score_txt.length);\ntrace(score_txt.currentFrame);",
+        "trace(\"gone\");",
+    ];
     {
         let l = Arc::make_mut(&mut scripts);
         for (k, src) in l.keyframes.iter_mut().zip(frames) {
@@ -981,7 +1319,11 @@ fn text_fields_export_as_named_instances_and_static_text_as_before() {
     (pass.lines, pass.max_chars) = (LineType::Password, 5);
     let mut note = TextField::new(TextKind::Dynamic);
     (note.lines, note.selectable, note.background, note.border) = (LineType::Multiline, false, true, true);
-    let els = vec![field_el(60, "", Vec2::new(5.0, 5.0), (40.0, 16.0), "Hi", None), field_el(61, "note_txt", Vec2::new(5.0, 30.0), (150.0, 40.0), "Hello", Some(note)), field_el(62, "pass_txt", Vec2::new(5.0, 80.0), (90.0, 18.0), "", Some(pass))];
+    let els = vec![
+        field_el(60, "", Vec2::new(5.0, 5.0), (40.0, 16.0), "Hi", None),
+        field_el(61, "note_txt", Vec2::new(5.0, 30.0), (150.0, 40.0), "Hello", Some(note)),
+        field_el(62, "pass_txt", Vec2::new(5.0, 80.0), (90.0, 18.0), "", Some(pass)),
+    ];
     let ElementKind::Text(static_text) = &els[0].kind else { panic!("the first element is text") };
     let outline = static_text.outline.clone();
     Arc::make_mut(&mut doc.timeline_mut(0).layers[0]).keyframe_mut(0).unwrap().elements = els;
@@ -996,13 +1338,19 @@ fn text_fields_export_as_named_instances_and_static_text_as_before() {
     let f = &items[1];
     assert_eq!((f["id"].as_u64(), f["n"].as_str(), &f["m"]), (Some(61), Some("note_txt"), &json!([1, 0, 0, 1, 5, 30])));
     let tf = &f["tf"];
-    assert_eq!((tf["k"].as_str(), tf["ln"].as_str(), tf["w"].as_f64(), tf["h"].as_f64(), tf["sel"].as_bool(), tf["t"].as_str()), (Some("dynamic"), Some("multiline"), Some(150.0), Some(40.0), Some(false), Some("Hello")));
+    assert_eq!(
+        (tf["k"].as_str(), tf["ln"].as_str(), tf["w"].as_f64(), tf["h"].as_f64(), tf["sel"].as_bool(), tf["t"].as_str()),
+        (Some("dynamic"), Some("multiline"), Some(150.0), Some(40.0), Some(false), Some("Hello"))
+    );
     assert_eq!(tf["font"], json!({"family": "Inter", "size": 14, "bold": true, "italic": false, "align": "center", "ls": 0.5, "lsp": 2}));
     assert_eq!((&tf["bd"], &tf["bk"]["j"]), (&json!([0, 0, 0, 1, 1]), &json!("miter")), "a 1 px mitred border");
     assert_eq!(m.json["paints"][tf["bg"].as_u64().unwrap() as usize], json!({"s": [1, 1, 1, 1]}));
     assert!(tf.get("mx").is_none());
     let p = &items[2]["tf"];
-    assert_eq!((p["k"].as_str(), p["ln"].as_str(), p["mx"].as_u64(), p.get("bg"), p.get("bd")), (Some("input"), Some("password"), Some(5), None, None));
+    assert_eq!(
+        (p["k"].as_str(), p["ln"].as_str(), p["mx"].as_u64(), p.get("bg"), p.get("bd")),
+        (Some("input"), Some("password"), Some(5), None, None)
+    );
     assert_eq!(m.report.get(FIELD_FONTS), Some(&2), "{:?}", m.report);
     // The page's calls: the viewer types into the input field, the keyboard moves.
     let mut js = Js::new(&m);
@@ -1010,7 +1358,10 @@ fn text_fields_export_as_named_instances_and_static_text_as_before() {
     assert_eq!(js.eval("P.typed('62', 'Hello\\nWorld')"), json!("Hello"), "one line, at most 5 characters");
     assert_eq!(js.eval("[P.fieldText('62'), P.fieldText('61'), P.fieldText('60')]"), json!(["Hello", "Hello", null]));
     assert_eq!(js.eval("P.typed('61', 'x')"), Value::Null, "a dynamic field isn't typed into");
-    assert_eq!(js.eval("[P.focus('62'), P.snapshot().focus, P.focus('61'), P.focus(null), P.snapshot().focus]"), json!([true, [62], false, false, null]));
+    assert_eq!(
+        js.eval("[P.focus('62'), P.snapshot().focus, P.focus('61'), P.focus(null), P.snapshot().focus]"),
+        json!([true, [62], false, false, null])
+    );
     // The page hears each field as one, with its text, in place of its items.
     let seen = js.eval("(function () { var out = []; P.evaluate({ item: function () {}, field: function (f) { out.push([f.key, f.text, f.tf.k, f.items.length]); }, clipBegin: function () {}, clipEnd: function () {}, maskBegin: function () {}, maskEnd: function () {}, groupBegin: function () {}, groupEnd: function () {} }); return out; })()");
     assert_eq!(seen, json!([["61", null, "dynamic", 4], ["62", "Hello", "input", 1]]));

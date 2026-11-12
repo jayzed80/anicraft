@@ -118,7 +118,13 @@ pub struct SliderLook {
 /// A slider and its number field, both named. (egui's own number field beside a slider is
 /// anonymous unless the slider shows a text label, which our form rows already have on the
 /// left.) Returns both as one response: `changed`, `drag_stopped` and the rest cover either.
-pub fn slider<N: egui::emath::Numeric>(ui: &mut egui::Ui, value: &mut N, range: std::ops::RangeInclusive<N>, name: &str, look: SliderLook) -> Response {
+pub fn slider<N: egui::emath::Numeric>(
+    ui: &mut egui::Ui,
+    value: &mut N,
+    range: std::ops::RangeInclusive<N>,
+    name: &str,
+    look: SliderLook,
+) -> Response {
     let mut s = egui::Slider::new(&mut *value, range.clone()).show_value(false).logarithmic(look.logarithmic);
     if let Some(step) = look.step {
         s = s.step_by(step);
@@ -306,7 +312,15 @@ mod tests {
                 continue;
             }
             let b = n.bounds().unwrap_or_default();
-            let at = format!("{:?} at ({:.0}, {:.0}) {:.0}×{:.0}{}", n.role(), b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0, n.value().map(|v| format!(" value “{v}”")).unwrap_or_default());
+            let at = format!(
+                "{:?} at ({:.0}, {:.0}) {:.0}×{:.0}{}",
+                n.role(),
+                b.x0,
+                b.y0,
+                b.x1 - b.x0,
+                b.y1 - b.y0,
+                n.value().map(|v| format!(" value “{v}”")).unwrap_or_default()
+            );
             if n.role() == Role::Unknown {
                 out.push(format!("no role: {at}"));
             } else if !named(n) {
@@ -324,10 +338,7 @@ mod tests {
     }
 
     fn input(scale: f32) -> egui::RawInput {
-        egui::RawInput {
-            screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 940.0) / scale)),
-            ..Default::default()
-        }
+        egui::RawInput { screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 940.0) / scale)), ..Default::default() }
     }
 
     /// The app on a headless context with AccessKit on, after `setup` (with a few frames for
@@ -345,7 +356,16 @@ mod tests {
             let out = frame(&ctx, &mut app, input(scale));
             last = out.platform_output.accesskit_update;
         }
-        (last.unwrap_or_else(|| TreeUpdate { nodes: Vec::new(), tree: None, tree_id: egui::accesskit::TreeId::ROOT, focus: egui::accesskit::NodeId(0) }), app, ctx)
+        (
+            last.unwrap_or_else(|| TreeUpdate {
+                nodes: Vec::new(),
+                tree: None,
+                tree_id: egui::accesskit::TreeId::ROOT,
+                focus: egui::accesskit::NodeId(0),
+            }),
+            app,
+            ctx,
+        )
     }
 
     fn check(name: &str, setup: impl FnOnce(&mut App, &egui::Context)) -> Vec<String> {
@@ -371,10 +391,85 @@ mod tests {
     fn every_interactive_node_has_a_name_and_a_role() {
         let mut found = Vec::new();
         found.extend(check("default", |_, _| {}));
-        for tool in [Tool::Bone, Tool::Rect, Tool::Star, Tool::Text, Tool::Pencil, Tool::Brush, Tool::PaintBrush, Tool::Eraser, Tool::PaintBucket, Tool::InkBottle, Tool::Eyedropper, Tool::Pen] {
+        for tool in [
+            Tool::Bone,
+            Tool::Rect,
+            Tool::Star,
+            Tool::Text,
+            Tool::Pencil,
+            Tool::Brush,
+            Tool::PaintBrush,
+            Tool::Eraser,
+            Tool::PaintBucket,
+            Tool::InkBottle,
+            Tool::Eyedropper,
+            Tool::Pen,
+        ] {
             found.extend(check(&format!("{tool:?} tool"), |a, _| a.tool = tool));
         }
-        for panel in ["select", "motion", "motionspan", "motionpath", "motionpoints", "motionedit", "motionpins", "motionpinsspan", "rawsub", "camera", "cameraview", "bones", "sound", "envelope", "prefs", "shortcuts", "palette", "about", "files", "licenses", "confirm", "recovery", "frames", "actions", "script", "scriptproblems", "testscript", "onion", "onionmenu", "editmultiple", "library", "librarymenu", "edittransform", "onionsymbol", "layerprops", "frameview", "layercolour", "timelinepolish", "convert", "mixed", "bitmap", "nineslice", "nineslicedit", "find", "explorer", "publish", "publishreport", "publishanim", "start", "drop", "droplibrary", "testmovie", "testmovieinside", "templates", "savetemplate", "droptimeline", "textfields", "testtext", "brushlibrary", "brushcurve", "paintbrush"] {
+        for panel in [
+            "select",
+            "motion",
+            "motionspan",
+            "motionpath",
+            "motionpoints",
+            "motionedit",
+            "motionpins",
+            "motionpinsspan",
+            "rawsub",
+            "camera",
+            "cameraview",
+            "bones",
+            "sound",
+            "envelope",
+            "prefs",
+            "shortcuts",
+            "palette",
+            "about",
+            "files",
+            "licenses",
+            "confirm",
+            "recovery",
+            "frames",
+            "actions",
+            "script",
+            "scriptproblems",
+            "testscript",
+            "onion",
+            "onionmenu",
+            "editmultiple",
+            "library",
+            "librarymenu",
+            "edittransform",
+            "onionsymbol",
+            "layerprops",
+            "frameview",
+            "layercolour",
+            "timelinepolish",
+            "convert",
+            "mixed",
+            "bitmap",
+            "nineslice",
+            "nineslicedit",
+            "find",
+            "explorer",
+            "publish",
+            "publishreport",
+            "publishanim",
+            "start",
+            "drop",
+            "droplibrary",
+            "testmovie",
+            "testmovieinside",
+            "templates",
+            "savetemplate",
+            "droptimeline",
+            "textfields",
+            "testtext",
+            "brushlibrary",
+            "brushcurve",
+            "paintbrush",
+        ] {
             found.extend(check(panel, |a, _| a.open_panel(Some(panel))));
         }
         // Test Movie in a window of its own (ADR 0062): its controls, named in that window.
@@ -406,7 +501,11 @@ mod tests {
         }
         found.extend(check("motion editor colour rows", |a, _| {
             a.open_panel(Some("motionedit"));
-            a.me_styles = vec![anicraft_engine::doc::ColorStyle::Tint, anicraft_engine::doc::ColorStyle::Advanced, anicraft_engine::doc::ColorStyle::Brightness];
+            a.me_styles = vec![
+                anicraft_engine::doc::ColorStyle::Tint,
+                anicraft_engine::doc::ColorStyle::Advanced,
+                anicraft_engine::doc::ColorStyle::Brightness,
+            ];
         }));
         found.extend(check("high contrast at 200%", |a, ctx| {
             let mut p = a.prefs.clone();
@@ -486,7 +585,10 @@ mod tests {
         assert!(n.bounds().is_some_and(|b| b.x1 > b.x0 || b.y1 > b.y0) || items[0].bounds.is_empty(), "bounds on screen");
         assert_eq!(t.focus, crate::stage_a11y::node_id(first.0, first.1).accesskit_id(), "the reader's focus is on it");
         // The list box is the canvas's child, and its options are the list's.
-        let list = t.nodes.iter().find(|(_, n)| n.role() == Role::ListBox && n.children().contains(&crate::stage_a11y::node_id(first.0, first.1).accesskit_id()));
+        let list = t
+            .nodes
+            .iter()
+            .find(|(_, n)| n.role() == Role::ListBox && n.children().contains(&crate::stage_a11y::node_id(first.0, first.1).accesskit_id()));
         assert!(list.is_some(), "the options sit in a list box");
         let canvas = t.nodes.iter().find(|(_, n)| n.role() == Role::Canvas && n.label().is_some_and(|l| l.starts_with("Stage"))).map(|(_, n)| n);
         assert!(canvas.is_some_and(|c| list.is_some_and(|(id, _)| c.children().contains(id))), "the list box is the stage's child");
@@ -645,7 +747,11 @@ mod tests {
         let t = frame(&ctx, &mut app, input(1.0)).platform_output.accesskit_update.unwrap_or_else(|| panic!("no tree"));
         let found = audit(&t);
         assert!(found.is_empty(), "the open menu passes the audit:\n{}", found.join("\n"));
-        let palette = app.menu_keys.open_items(&ctx).into_iter().position(|id| node(&t, id).and_then(Node::label).is_some_and(|l| l.starts_with("Command Palette")));
+        let palette = app
+            .menu_keys
+            .open_items(&ctx)
+            .into_iter()
+            .position(|id| node(&t, id).and_then(Node::label).is_some_and(|l| l.starts_with("Command Palette")));
         let palette = palette.unwrap_or_else(|| panic!("Help has Command Palette…"));
         while app.menu_keys.open_items(&ctx).iter().position(|id| Some(*id) == focused(&ctx)) != Some(palette) {
             key(&ctx, &mut app, Key::ArrowDown, M::NONE);
@@ -693,7 +799,13 @@ mod tests {
         let mut seen = Vec::new();
         for _ in 0..Region::CYCLE.len() {
             let mut i = input(1.0);
-            i.events.push(egui::Event::Key { key: egui::Key::F6, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND });
+            i.events.push(egui::Event::Key {
+                key: egui::Key::F6,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::COMMAND,
+            });
             frame(&ctx, &mut app, i);
             frame(&ctx, &mut app, input(1.0));
             let at = focused_region(&ctx);
@@ -704,7 +816,13 @@ mod tests {
         }
         assert_eq!(seen, Region::CYCLE.map(Some).to_vec());
         let mut i = input(1.0);
-        i.events.push(egui::Event::Key { key: egui::Key::F6, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND | egui::Modifiers::SHIFT });
+        i.events.push(egui::Event::Key {
+            key: egui::Key::F6,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        });
         frame(&ctx, &mut app, i);
         frame(&ctx, &mut app, input(1.0));
         assert_eq!(focused_region(&ctx), Some(Region::Library), "Ctrl+Shift+F6 goes back");

@@ -226,7 +226,9 @@ fn prop(values: &[(u32, Value)]) -> Value {
     match keys.as_slice() {
         [] => json!({"a": 0, "k": 0}),
         [(_, v)] => json!({"a": 0, "k": v}),
-        _ => json!({"a": 1, "k": keys.iter().map(|(t, v)| json!({"t": t, "s": if v.is_array() { (*v).clone() } else { json!([v]) }, "h": 1})).collect::<Vec<_>>()}),
+        _ => {
+            json!({"a": 1, "k": keys.iter().map(|(t, v)| json!({"t": t, "s": if v.is_array() { (*v).clone() } else { json!([v]) }, "h": 1})).collect::<Vec<_>>()})
+        }
     }
 }
 
@@ -270,7 +272,13 @@ fn sample(item: &DisplayItem, opacity: f32, masks: Vec<Bez>, report: &mut HashSe
     } else {
         let fill = match &item.fill {
             Some(Paint::Solid(c)) => Some(Fill::Solid { color: fx.apply(*c), rule: item.fill_rule }),
-            Some(Paint::Linear { start, end, stops }) => Some(Fill::Gradient { radial: false, start: m.apply(*start), end: m.apply(*end), stops: stops.iter().map(|s| (s.offset, fx.apply(s.color))).collect(), rule: item.fill_rule }),
+            Some(Paint::Linear { start, end, stops }) => Some(Fill::Gradient {
+                radial: false,
+                start: m.apply(*start),
+                end: m.apply(*end),
+                stops: stops.iter().map(|s| (s.offset, fx.apply(s.color))).collect(),
+                rule: item.fill_rule,
+            }),
             Some(Paint::Radial { center, radius, stops }) => {
                 // Lottie's radial gradients are circles: a stretched or skewed one is drawn
                 // with its mean radius.
@@ -281,7 +289,13 @@ fn sample(item: &DisplayItem, opacity: f32, masks: Vec<Bez>, report: &mut HashSe
                 }
                 let r = radius * m.mean_scale();
                 let c = m.apply(*center);
-                Some(Fill::Gradient { radial: true, start: c, end: c + Vec2::new(r, 0.0), stops: stops.iter().map(|s| (s.offset, fx.apply(s.color))).collect(), rule: item.fill_rule })
+                Some(Fill::Gradient {
+                    radial: true,
+                    start: c,
+                    end: c + Vec2::new(r, 0.0),
+                    stops: stops.iter().map(|s| (s.offset, fx.apply(s.color))).collect(),
+                    rule: item.fill_rule,
+                })
             }
             Some(Paint::Bitmap { .. }) => {
                 report.insert("bitmap fills (not exported yet)");
@@ -302,7 +316,14 @@ fn sample(item: &DisplayItem, opacity: f32, masks: Vec<Bez>, report: &mut HashSe
 /// With `background`, the stage colour is a solid layer at the bottom; otherwise the animation
 /// is transparent.
 pub fn to_lottie(doc: &Document, name: &str, from: u32, to: u32, background: bool) -> LottieExport {
-    let names: HashMap<u64, String> = doc.scenes.iter().map(|s| &s.timeline).chain(doc.library.iter().map(|s| &s.timeline)).flat_map(|t| t.layers.iter()).map(|l| (l.id.0, l.name.clone())).collect();
+    let names: HashMap<u64, String> = doc
+        .scenes
+        .iter()
+        .map(|s| &s.timeline)
+        .chain(doc.library.iter().map(|s| &s.timeline))
+        .flat_map(|t| t.layers.iter())
+        .map(|l| (l.id.0, l.name.clone()))
+        .collect();
     let mut notes: HashMap<&'static str, HashSet<usize>> = HashMap::new();
     let mut tracks: Vec<Track> = Vec::new();
     // Open track per key: the index of the track it continues.
@@ -370,7 +391,11 @@ pub fn to_lottie(doc: &Document, name: &str, from: u32, to: u32, background: boo
             }
             let blend = lottie_blend(blend_mode);
             if !blend_mode.is_normal() {
-                flags.insert(if blend.is_some() { "blend modes (applied shape by shape)" } else { "Subtract, Invert, Alpha and Erase blending (Lottie has no equivalent; drawn normally)" });
+                flags.insert(if blend.is_some() {
+                    "blend modes (applied shape by shape)"
+                } else {
+                    "Subtract, Invert, Alpha and Erase blending (Lottie has no equivalent; drawn normally)"
+                });
             }
             let blend = blend.unwrap_or(0);
             let Some(s) = sample(item, opacity, masks, &mut flags) else {
@@ -405,7 +430,14 @@ pub fn to_lottie(doc: &Document, name: &str, from: u32, to: u32, background: boo
             let ti = match open.get(&key).copied().filter(|&ti| tracks.get(ti).is_some_and(|tr| tr.last + 1 == t)) {
                 Some(ti) => ti,
                 None => {
-                    tracks.push(Track { key: key.clone(), name: names.get(&item.layer.0).cloned().unwrap_or_default(), first: t, last: t, frames: Vec::new(), first_index: index });
+                    tracks.push(Track {
+                        key: key.clone(),
+                        name: names.get(&item.layer.0).cloned().unwrap_or_default(),
+                        first: t,
+                        last: t,
+                        frames: Vec::new(),
+                        first_index: index,
+                    });
                     open.insert(key.clone(), tracks.len() - 1);
                     tracks.len() - 1
                 }
@@ -439,7 +471,8 @@ pub fn to_lottie(doc: &Document, name: &str, from: u32, to: u32, background: boo
         }
     }
     let rank = |i: usize| tracks.get(i).map_or((u32::MAX, usize::MAX), |t| (t.first, t.first_index));
-    let mut ready: std::collections::BTreeSet<((u32, usize), usize)> = (0..tracks.len()).filter(|&i| indegree.get(i) == Some(&0)).map(|i| (rank(i), i)).collect();
+    let mut ready: std::collections::BTreeSet<((u32, usize), usize)> =
+        (0..tracks.len()).filter(|&i| indegree.get(i) == Some(&0)).map(|i| (rank(i), i)).collect();
     let mut bottom_up: Vec<usize> = Vec::with_capacity(tracks.len());
     while let Some(first) = ready.pop_first() {
         let i = first.1;
@@ -538,7 +571,8 @@ fn layer(tr: &Track, ind: usize) -> Value {
         // The miter limit is a plain number in Lottie: the first frame's.
         // (Round and bevel joins don't use it: Lottie's usual 4, as before styles.)
         let miter = if join == 1 { lines.first().map_or(json!(4), |(_, l)| n(l.miter)) } else { json!(4) };
-        let mut st = json!({"ty": "st", "nm": "Stroke", "c": prop(&color), "o": prop(&opacity), "w": prop(&width), "lc": cap, "lj": join, "ml": miter});
+        let mut st =
+            json!({"ty": "st", "nm": "Stroke", "c": prop(&color), "o": prop(&opacity), "w": prop(&width), "lc": cap, "lj": join, "ml": miter});
         if dashes > 0 {
             // Dash, gap, dash, gap…, then the offset; each animates like any value.
             let mut d: Vec<Value> = (0..dashes)
@@ -554,14 +588,20 @@ fn layer(tr: &Track, ind: usize) -> Value {
     }
     match f.first().and_then(|(_, s)| s.fill.as_ref()) {
         Some(Fill::Solid { rule: r, .. }) => {
-            let color: Vec<(u32, Value)> = f.iter().filter_map(|(t, s)| match &s.fill {
-                Some(Fill::Solid { color, .. }) => Some((*t, rgb(*color))),
-                _ => None,
-            }).collect();
-            let opacity: Vec<(u32, Value)> = f.iter().filter_map(|(t, s)| match &s.fill {
-                Some(Fill::Solid { color, .. }) => Some((*t, n(color.sanitized().a * 100.0))),
-                _ => None,
-            }).collect();
+            let color: Vec<(u32, Value)> = f
+                .iter()
+                .filter_map(|(t, s)| match &s.fill {
+                    Some(Fill::Solid { color, .. }) => Some((*t, rgb(*color))),
+                    _ => None,
+                })
+                .collect();
+            let opacity: Vec<(u32, Value)> = f
+                .iter()
+                .filter_map(|(t, s)| match &s.fill {
+                    Some(Fill::Solid { color, .. }) => Some((*t, n(color.sanitized().a * 100.0))),
+                    _ => None,
+                })
+                .collect();
             items.push(json!({"ty": "fl", "nm": "Fill", "c": prop(&color), "o": prop(&opacity), "r": rule(*r)}));
         }
         Some(Fill::Gradient { radial, stops, rule: r, .. }) => {
@@ -623,7 +663,13 @@ mod tests {
     #[test]
     fn beziers_bake_lines_quads_and_closing_points() {
         let mut p = Path::new();
-        p.cmds = vec![PathCmd::MoveTo(Vec2::new(0.0, 0.0)), PathCmd::LineTo(Vec2::new(10.0, 0.0)), PathCmd::QuadTo(Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)), PathCmd::LineTo(Vec2::new(0.0, 0.0)), PathCmd::Close];
+        p.cmds = vec![
+            PathCmd::MoveTo(Vec2::new(0.0, 0.0)),
+            PathCmd::LineTo(Vec2::new(10.0, 0.0)),
+            PathCmd::QuadTo(Vec2::new(10.0, 10.0), Vec2::new(0.0, 10.0)),
+            PathCmd::LineTo(Vec2::new(0.0, 0.0)),
+            PathCmd::Close,
+        ];
         let b = beziers(&p, &Affine::translate(100.0, 0.0));
         assert_eq!(b.len(), 1);
         let b = &b[0];
@@ -643,7 +689,10 @@ mod tests {
     #[test]
     fn hold_keyframes_only_where_values_change() {
         assert_eq!(prop(&[(0, json!(1)), (1, json!(1))]), json!({"a": 0, "k": 1}));
-        assert_eq!(prop(&[(0, json!(1)), (1, json!(1)), (2, json!(5))]), json!({"a": 1, "k": [{"t": 0, "s": [1], "h": 1}, {"t": 2, "s": [5], "h": 1}]}));
+        assert_eq!(
+            prop(&[(0, json!(1)), (1, json!(1)), (2, json!(5))]),
+            json!({"a": 1, "k": [{"t": 0, "s": [1], "h": 1}, {"t": 2, "s": [5], "h": 1}]})
+        );
         assert_eq!(prop(&[(0, json!([1, 2])), (3, json!([4, 2]))])["k"][1]["s"], json!([4, 2]), "arrays are the value itself");
     }
 
@@ -653,7 +702,10 @@ mod tests {
         let frames = doc.frame_count();
         let e = to_lottie(&doc, "demo", 0, frames - 1, true);
         let v = parse(&e);
-        assert_eq!((v["w"].as_u64(), v["h"].as_u64(), v["op"].as_u64()), (Some(u64::from(doc.stage.width)), Some(u64::from(doc.stage.height)), Some(u64::from(frames))));
+        assert_eq!(
+            (v["w"].as_u64(), v["h"].as_u64(), v["op"].as_u64()),
+            (Some(u64::from(doc.stage.width)), Some(u64::from(doc.stage.height)), Some(u64::from(frames)))
+        );
         assert_eq!(v["fr"].as_f64(), Some(f64::from(doc.stage.fps)));
         let layers = v["layers"].as_array().unwrap();
         assert_eq!(layers.len(), e.layers + 1, "shape layers and the stage");
@@ -699,8 +751,20 @@ mod tests {
     fn variable_width_strokes_export_as_filled_outlines() {
         use anicraft_doc::{Document, Element, ElementId, ElementKind, ProfilePreset, Shape, Stroke};
         let mut doc = Document::default();
-        let shape = Shape { path: std::sync::Arc::new(Path::line(Vec2::new(10.0, 10.0), Vec2::new(200.0, 10.0))), fill: None, stroke: Some(Stroke::new(Rgba::hex(0x00ff00), 10.0).with_profile(ProfilePreset::TaperEnd.profile())), fill_rule: FillRule::NonZero, merge: false };
-        let el = Element { id: ElementId(77), name: String::new(), transform: Affine::IDENTITY, color: Default::default(), kind: ElementKind::Shape(shape) };
+        let shape = Shape {
+            path: std::sync::Arc::new(Path::line(Vec2::new(10.0, 10.0), Vec2::new(200.0, 10.0))),
+            fill: None,
+            stroke: Some(Stroke::new(Rgba::hex(0x00ff00), 10.0).with_profile(ProfilePreset::TaperEnd.profile())),
+            fill_rule: FillRule::NonZero,
+            merge: false,
+        };
+        let el = Element {
+            id: ElementId(77),
+            name: String::new(),
+            transform: Affine::IDENTITY,
+            color: Default::default(),
+            kind: ElementKind::Shape(shape),
+        };
         let layer = std::sync::Arc::make_mut(&mut doc.timeline_mut(0).layers[0]);
         layer.keyframe_mut(0).unwrap().elements.push(std::sync::Arc::new(el));
         let e = to_lottie(&doc, "w", 0, 0, false);
@@ -716,8 +780,20 @@ mod tests {
         use anicraft_doc::{Cap, Dash, Document, Element, ElementId, ElementKind, Join, Shape, Stroke, StrokeStyle};
         let export = |st: Stroke| {
             let mut doc = Document::default();
-            let shape = Shape { path: std::sync::Arc::new(Path::line(Vec2::new(10.0, 10.0), Vec2::new(200.0, 10.0))), fill: None, stroke: Some(st), fill_rule: FillRule::NonZero, merge: false };
-            let el = Element { id: ElementId(77), name: String::new(), transform: Affine::scale(2.0, 2.0), color: Default::default(), kind: ElementKind::Shape(shape) };
+            let shape = Shape {
+                path: std::sync::Arc::new(Path::line(Vec2::new(10.0, 10.0), Vec2::new(200.0, 10.0))),
+                fill: None,
+                stroke: Some(st),
+                fill_rule: FillRule::NonZero,
+                merge: false,
+            };
+            let el = Element {
+                id: ElementId(77),
+                name: String::new(),
+                transform: Affine::scale(2.0, 2.0),
+                color: Default::default(),
+                kind: ElementKind::Shape(shape),
+            };
             let layer = std::sync::Arc::make_mut(&mut doc.timeline_mut(0).layers[0]);
             layer.keyframe_mut(0).unwrap().elements.push(std::sync::Arc::new(el));
             let v = parse(&to_lottie(&doc, "s", 0, 0, false));
@@ -727,14 +803,24 @@ mod tests {
         let st = export(Stroke::new(Rgba::BLACK, 3.0));
         assert_eq!((st["lc"].clone(), st["lj"].clone(), st["ml"].clone(), st.get("d").is_none()), (json!(2), json!(2), json!(4), true));
         // Butt caps, miter joins with their limit, dashes scaled like the width.
-        let style = StrokeStyle { cap: Cap::Butt, join: Join::Miter, miter_limit: 6.0, dash: Some(Dash::Dashed { lengths: vec![4.0, 1.5].into(), offset: 1.0 }) };
+        let style = StrokeStyle {
+            cap: Cap::Butt,
+            join: Join::Miter,
+            miter_limit: 6.0,
+            dash: Some(Dash::Dashed { lengths: vec![4.0, 1.5].into(), offset: 1.0 }),
+        };
         let st = export(Stroke::new(Rgba::BLACK, 3.0).with_style(style));
         assert_eq!((st["lc"].clone(), st["lj"].clone(), st["ml"].clone(), st["w"]["k"].clone()), (json!(1), json!(1), json!(6.0), json!(6.0)));
         let d = st["d"].as_array().unwrap();
         let got: Vec<(&str, f64)> = d.iter().map(|e| (e["n"].as_str().unwrap(), e["v"]["k"].as_f64().unwrap())).collect();
         assert_eq!(got, [("d", 8.0), ("g", 3.0), ("o", 2.0)]);
         // Dots: zero-length dashes with round caps, whatever the cap.
-        let st = export(Stroke::new(Rgba::BLACK, 3.0).with_style(StrokeStyle { cap: Cap::Square, join: Join::Bevel, dash: Dash::dotted(2.0), ..StrokeStyle::default() }));
+        let st = export(Stroke::new(Rgba::BLACK, 3.0).with_style(StrokeStyle {
+            cap: Cap::Square,
+            join: Join::Bevel,
+            dash: Dash::dotted(2.0),
+            ..StrokeStyle::default()
+        }));
         assert_eq!((st["lc"].clone(), st["lj"].clone()), (json!(2), json!(3)));
         assert_eq!((st["d"][0]["v"]["k"].as_f64(), st["d"][1]["v"]["k"].as_f64()), (Some(0.0), Some(10.0)));
     }

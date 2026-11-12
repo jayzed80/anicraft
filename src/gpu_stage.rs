@@ -28,7 +28,10 @@ pub enum State {
     Off,
     Starting,
     /// Drawing, on this adapter; `direct` when straight into the window's textures.
-    Running { adapter: String, direct: bool },
+    Running {
+        adapter: String,
+        direct: bool,
+    },
     /// Could not start or stopped working; the CPU draws. The reason, for Preferences.
     Failed(String),
 }

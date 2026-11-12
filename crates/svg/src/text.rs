@@ -47,7 +47,13 @@ struct Flags {
 
 /// Whether two pieces would be drawn the same.
 fn same_look(a: &Style, b: &Style) -> bool {
-    a.font_family == b.font_family && a.font_size == b.font_size && a.bold == b.bold && a.italic == b.italic && a.fill == b.fill && a.fill_opacity == b.fill_opacity && a.letter_spacing == b.letter_spacing
+    a.font_family == b.font_family
+        && a.font_size == b.font_size
+        && a.bold == b.bold
+        && a.italic == b.italic
+        && a.fill == b.fill
+        && a.fill_opacity == b.fill_opacity
+        && a.letter_spacing == b.letter_spacing
 }
 
 /// The CSS generic family a name stands for, as the device font `anicraft-text` knows.
@@ -150,7 +156,14 @@ impl<'a> Builder<'a> {
                     }
                     let name = if out.is_empty() { name_of(el) } else { String::new() };
                     let block_alpha = alpha;
-                    let block = TextBlock { align: match c.anchor { Anchor::Start => TextAlign::Left, Anchor::Middle => TextAlign::Center, Anchor::End => TextAlign::Right }, ..block };
+                    let block = TextBlock {
+                        align: match c.anchor {
+                            Anchor::Start => TextAlign::Left,
+                            Anchor::Middle => TextAlign::Center,
+                            Anchor::End => TextAlign::Right,
+                        },
+                        ..block
+                    };
                     out.push(ImportedElement { name, transform, alpha: block_alpha, kind: ElementKind::Text(Arc::new(block)) });
                 }
                 Ok(None) => {}
@@ -163,7 +176,11 @@ impl<'a> Builder<'a> {
     /// Reads `el`'s positions and content into chunks.
     fn text_content(&mut self, el: &'a X, style: &Style, chunks: &mut Vec<Chunk>, flags: &mut Flags, depth: usize) {
         let (vw, vh) = self.viewport;
-        let list = |key: &str, reference: f32| -> Vec<f32> { el.attr(key).map(|v| v.split([' ', ',', '\t', '\n', '\r']).filter(|p| !p.is_empty()).filter_map(|p| length(p, reference)).collect()).unwrap_or_default() };
+        let list = |key: &str, reference: f32| -> Vec<f32> {
+            el.attr(key)
+                .map(|v| v.split([' ', ',', '\t', '\n', '\r']).filter(|p| !p.is_empty()).filter_map(|p| length(p, reference)).collect())
+                .unwrap_or_default()
+        };
         let (xs, ys, dxs, dys) = (list("x", vw), list("y", vh), list("dx", vw), list("dy", vh));
         if xs.len() > 1 || ys.len() > 1 || dxs.len() > 1 || dys.len() > 1 {
             flags.per_char = true;

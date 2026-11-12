@@ -19,7 +19,8 @@ fn corpus() -> PathBuf {
 }
 
 fn cases() -> Vec<String> {
-    let mut out: Vec<String> = std::fs::read_dir(corpus()).unwrap().flatten().filter(|e| e.path().is_dir()).map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    let mut out: Vec<String> =
+        std::fs::read_dir(corpus()).unwrap().flatten().filter(|e| e.path().is_dir()).map(|e| e.file_name().to_string_lossy().into_owned()).collect();
     out.sort();
     out
 }
@@ -228,17 +229,23 @@ fn hostile_fla_archives_never_panic_and_fail_readably() {
             ("an absolute name", Box::new(move |e| e[last].name = b"/etc/x.xml".to_vec())),
             ("a drive name", Box::new(move |e| e[last].name = b"C:\\x.xml".to_vec())),
             ("a duplicate", Box::new(|e| e.push(e[1].clone()))),
-            ("a duplicate by separator", Box::new(|e| {
-                let mut d = e[1].clone();
-                d.name = d.name.iter().map(|&c| if c == b'/' { b'\\' } else { c }).collect();
-                e.push(d);
-            })),
-            ("overlapping entries", Box::new(|e| {
-                let mut d = e[1].clone();
-                d.name = b"other.xml".to_vec();
-                d.share = Some(1);
-                e.push(d);
-            })),
+            (
+                "a duplicate by separator",
+                Box::new(|e| {
+                    let mut d = e[1].clone();
+                    d.name = d.name.iter().map(|&c| if c == b'/' { b'\\' } else { c }).collect();
+                    e.push(d);
+                }),
+            ),
+            (
+                "overlapping entries",
+                Box::new(|e| {
+                    let mut d = e[1].clone();
+                    d.name = b"other.xml".to_vec();
+                    d.share = Some(1);
+                    e.push(d);
+                }),
+            ),
             ("a lying size", Box::new(|e| e[1].size = Some(3))),
             ("a lying checksum", Box::new(|e| e[1].crc = Some(1))),
             ("a ratio bomb", Box::new(|e| e[1].size = Some(200 << 20))),
@@ -271,7 +278,10 @@ fn big_fla() -> (Vec<u8>, usize) {
             let (x, y) = (rng.below(20_000), rng.below(20_000));
             edges.push_str(&format!("<Edge fillStyle1=\"1\" edges=\"!{x} {y}|{} {}|{} {}\"/>", x + 200, y + e, x + 100, y + 300));
         }
-        let xml = format!("<DOMSymbolItem name=\"Symbol {s}\"><timeline><DOMTimeline name=\"Symbol {s}\"><layers><DOMLayer name=\"L\"><frames><DOMFrame index=\"0\"><elements><DOMShape><fills><FillStyle index=\"1\"><SolidColor color=\"#{:06X}\"/></FillStyle></fills><edges>{edges}</edges></DOMShape></elements></DOMFrame></frames></DOMLayer></layers></DOMTimeline></timeline></DOMSymbolItem>", rng.next() & 0xffffff);
+        let xml = format!(
+            "<DOMSymbolItem name=\"Symbol {s}\"><timeline><DOMTimeline name=\"Symbol {s}\"><layers><DOMLayer name=\"L\"><frames><DOMFrame index=\"0\"><elements><DOMShape><fills><FillStyle index=\"1\"><SolidColor color=\"#{:06X}\"/></FillStyle></fills><edges>{edges}</edges></DOMShape></elements></DOMFrame></frames></DOMLayer></layers></DOMTimeline></timeline></DOMSymbolItem>",
+            rng.next() & 0xffffff
+        );
         files.insert(format!("LIBRARY/Symbols/Symbol {s}.xml"), xml.into_bytes());
         includes.push_str(&format!("<Include href=\"Symbols/Symbol {s}.xml\"/>"));
     }
@@ -294,7 +304,9 @@ fn big_fla() -> (Vec<u8>, usize) {
     for f in 0..240 {
         frames.push_str(&format!("<DOMFrame index=\"{f}\"><elements><DOMSymbolInstance libraryItemName=\"Symbol {}\"/><DOMBitmapInstance libraryItemName=\"Images/noise {}.png\"/></elements></DOMFrame>", f % 400, f % 24));
     }
-    let doc = format!("<DOMDocument width=\"1920\" height=\"1080\" frameRate=\"24\"><media>{media}</media><symbols>{includes}</symbols><timelines><DOMTimeline name=\"Scene 1\"><layers><DOMLayer name=\"Layer 1\"><frames>{frames}</frames></DOMLayer></layers></DOMTimeline></timelines></DOMDocument>");
+    let doc = format!(
+        "<DOMDocument width=\"1920\" height=\"1080\" frameRate=\"24\"><media>{media}</media><symbols>{includes}</symbols><timelines><DOMTimeline name=\"Scene 1\"><layers><DOMLayer name=\"Layer 1\"><frames>{frames}</frames></DOMLayer></layers></DOMTimeline></timelines></DOMDocument>"
+    );
     files.insert("DOMDocument.xml".into(), doc.into_bytes());
     let n = files.len();
     (pack::pack(&files, &pack::VARIANTS[2]), n)
@@ -322,6 +334,10 @@ fn measure_importing_a_50_mb_fla() {
     }
     eprintln!("{:.1} MB .fla, {files} files:", fla.len() as f64 / 1e6);
     for (open, read, bytes, import) in times {
-        eprintln!("  open {open:?}, read every entry {read:?} ({:.1} MB, {:.0} MB/s), import {import:?}", bytes as f64 / 1e6, bytes as f64 / 1e6 / read.as_secs_f64());
+        eprintln!(
+            "  open {open:?}, read every entry {read:?} ({:.1} MB, {:.0} MB/s), import {import:?}",
+            bytes as f64 / 1e6,
+            bytes as f64 / 1e6 / read.as_secs_f64()
+        );
     }
 }

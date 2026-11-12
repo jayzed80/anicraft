@@ -102,7 +102,13 @@ impl Bone {
     }
 
     fn is_sane(&self) -> bool {
-        self.parent != self.child && self.head.x.is_finite() && self.head.y.is_finite() && self.tail.x.is_finite() && self.tail.y.is_finite() && self.rest.is_finite() && self.rest.inverse().is_some()
+        self.parent != self.child
+            && self.head.x.is_finite()
+            && self.head.y.is_finite()
+            && self.tail.x.is_finite()
+            && self.tail.y.is_finite()
+            && self.rest.is_finite()
+            && self.rest.inverse().is_some()
     }
 }
 

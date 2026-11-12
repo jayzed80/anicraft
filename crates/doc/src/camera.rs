@@ -65,7 +65,13 @@ impl Camera {
 
     /// The camera element holding this camera (for commands).
     pub fn to_element(&self, id: ElementId) -> Element {
-        Element { id, name: String::new(), transform: self.transform(), color: ColorEffect::Tint { color: self.tint, amount: self.tint_amount }, kind: ElementKind::Camera }
+        Element {
+            id,
+            name: String::new(),
+            transform: self.transform(),
+            color: ColorEffect::Tint { color: self.tint, amount: self.tint_amount },
+            kind: ElementKind::Camera,
+        }
     }
 
     /// The camera on the stage: `T(centre) · R(rotation) · S(zoom)`.
@@ -84,7 +90,10 @@ impl Camera {
     pub fn view(&self, stage: &Stage, depth: f32) -> Affine {
         let mid = stage_center(stage);
         let c = mid + (self.center - mid) * parallax(depth);
-        let m = Affine::translate(mid.x, mid.y).mul(&Affine::scale(self.zoom, self.zoom)).mul(&Affine::rotate(-self.rotation)).mul(&Affine::translate(-c.x, -c.y));
+        let m = Affine::translate(mid.x, mid.y)
+            .mul(&Affine::scale(self.zoom, self.zoom))
+            .mul(&Affine::rotate(-self.rotation))
+            .mul(&Affine::translate(-c.x, -c.y));
         if m.is_finite() { m } else { Affine::IDENTITY }
     }
 

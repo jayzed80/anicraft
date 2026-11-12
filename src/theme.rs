@@ -398,7 +398,9 @@ pub fn install_fonts(ctx: &egui::Context, ui_font: Option<&UserFont>, data_font:
     use egui::{FontData, FontDefinitions, FontFamily};
     use std::sync::Arc;
     let mut defs = FontDefinitions::default();
-    for (bytes, name, family) in [(craft_fonts::UI_FONT, "craft-inter", FontFamily::Proportional), (craft_fonts::MONO_FONT, "craft-jetbrains-mono", FontFamily::Monospace)] {
+    for (bytes, name, family) in
+        [(craft_fonts::UI_FONT, "craft-inter", FontFamily::Proportional), (craft_fonts::MONO_FONT, "craft-jetbrains-mono", FontFamily::Monospace)]
+    {
         if let Some(b) = bytes {
             defs.font_data.insert(name.to_owned(), Arc::new(FontData::from_static(b)));
             defs.families.entry(family).or_default().insert(0, name.to_owned());
@@ -571,7 +573,14 @@ pub fn section<R>(ui: &mut egui::Ui, id: &str, style: Section, title: &str, deta
 }
 
 /// [`section`], also returning its header (a panel's keyboard anchor, `a11y::anchor`).
-pub fn section_with_header<R>(ui: &mut egui::Ui, id: &str, style: Section, title: &str, detail: Option<&str>, add: impl FnOnce(&mut egui::Ui) -> R) -> (egui::Response, Option<R>) {
+pub fn section_with_header<R>(
+    ui: &mut egui::Ui,
+    id: &str,
+    style: Section,
+    title: &str,
+    detail: Option<&str>,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> (egui::Response, Option<R>) {
     use egui::{Sense, StrokeKind, pos2, vec2};
     let key = ui.make_persistent_id(("section", id));
     let mut open = ui.data_mut(|d| *d.get_temp_mut_or(key, true));
@@ -652,7 +661,12 @@ pub fn to_rgba(c: Color32) -> anicraft_engine::doc::Rgba {
 
 pub fn to_color32(c: anicraft_engine::doc::Rgba) -> Color32 {
     let c = c.sanitized();
-    Color32::from_rgba_unmultiplied((c.r * 255.0).round() as u8, (c.g * 255.0).round() as u8, (c.b * 255.0).round() as u8, (c.a * 255.0).round() as u8)
+    Color32::from_rgba_unmultiplied(
+        (c.r * 255.0).round() as u8,
+        (c.g * 255.0).round() as u8,
+        (c.b * 255.0).round() as u8,
+        (c.a * 255.0).round() as u8,
+    )
 }
 
 /// How strongly a button's hit area is laid over the artwork (ADR 0057): enough to see where the

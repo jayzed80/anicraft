@@ -209,13 +209,22 @@ fn open(player: &Arc<Mutex<Player>>, failed: &Arc<AtomicBool>) -> Result<(cpal::
 
 #[cfg(not(sound_output))]
 fn open(_: &Arc<Mutex<Player>>, _: &Arc<AtomicBool>) -> Result<u32, String> {
-    Err(if cfg!(target_arch = "wasm32") { tr!("the web version of AniCraft has no sound output yet").into() } else { tr!("this build of AniCraft has no sound output").into() })
+    Err(if cfg!(target_arch = "wasm32") {
+        tr!("the web version of AniCraft has no sound output yet").into()
+    } else {
+        tr!("this build of AniCraft has no sound output").into()
+    })
 }
 
 /// An output stream whose callback mixes from the player. The lock is held only while one
 /// buffer is mixed; the UI holds it only to change a few fields.
 #[cfg(sound_output)]
-fn build<T: cpal::SizedSample + cpal::FromSample<f32>>(device: &cpal::Device, config: cpal::StreamConfig, player: &Arc<Mutex<Player>>, failed: &Arc<AtomicBool>) -> Result<cpal::Stream, cpal::Error> {
+fn build<T: cpal::SizedSample + cpal::FromSample<f32>>(
+    device: &cpal::Device,
+    config: cpal::StreamConfig,
+    player: &Arc<Mutex<Player>>,
+    failed: &Arc<AtomicBool>,
+) -> Result<cpal::Stream, cpal::Error> {
     use cpal::traits::DeviceTrait;
     let channels = usize::from(config.channels);
     let (player, failed) = (player.clone(), failed.clone());

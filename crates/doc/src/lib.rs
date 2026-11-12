@@ -4,45 +4,48 @@
 //! a flat [`DisplayList`], which renderers draw. Nothing here mutates during playback.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
-pub use anicraft_audio as audio;
 pub use anicraft_actions as actions;
+pub use anicraft_audio as audio;
 
 pub mod armature;
 mod bitmap;
-mod color_effect;
 pub mod camera;
-mod filter;
+mod color_effect;
 mod easing;
 mod eval;
 pub mod field;
+mod filter;
 mod hints;
-pub mod nine_slice;
 pub mod library;
 pub mod motion;
+pub mod nine_slice;
 pub mod path_table;
-pub mod width;
-pub mod stroke_style;
 pub mod player;
 pub mod publish;
 pub mod sample;
-pub mod templates;
 pub mod sound;
+pub mod stroke_style;
+pub mod templates;
+pub mod width;
 
-pub use filter::{Filter, FilterSide, MAX_BLUR, MAX_QUALITY, MAX_RAMP_STOPS, REST_SNAP, default_bevel_ramp, default_glow_ramp, pinned_stop, ramp_at};
+pub use actions::{Action, ButtonEvent, EventHandler, FrameScript, Language, PluginScript, SourceScript};
+pub use armature::{Armature, Bone, BoneId, JointAngle, Limits, Pose};
 pub use bitmap::{Bitmap, BitmapId, ImageError, MAX_BITMAP_EDGE, Pixels, base64_decode, base64_encode, decode_png, image_to_png};
-pub use easing::Easing;
+pub use camera::Camera;
 pub use color_effect::{ADVANCED_ADD, ADVANCED_MUL, ColorEffect, ColorStyle, ColorTransform};
+pub use easing::Easing;
+pub use eval::{
+    DisplayItem, DisplayList, Group, MAX_SYMBOL_DEPTH, evaluate, evaluate_guided, evaluate_layer_elements, evaluate_player, evaluate_scene,
+    evaluate_scene_camera, evaluate_timeline, evaluate_timeline_at, guide_walk, instance_start,
+};
+pub use filter::{Filter, FilterSide, MAX_BLUR, MAX_QUALITY, MAX_RAMP_STOPS, REST_SNAP, default_bevel_ramp, default_glow_ramp, pinned_stop, ramp_at};
 pub use hints::{HINT_TOLERANCE, HintSide, MAX_SHAPE_HINTS, ShapeHint, hint_index, hint_letter, nearest_outline, placed_on, shapes_centre};
 pub use library::{FolderId, LibraryEntry, LibraryFolder, LibraryItem, LibraryTree, NameError};
 pub use motion::{MotionTween, OnPath, PROPERTIES, Pin, PinError, Property, PropertyKey, Props, Track, motion_path};
-pub use sound::{EnvelopePoint, FrameSound, Sound, SoundEffect, SoundFormat, SoundId, SoundSync};
-pub use width::{MAX_WIDTH_FACTOR, MAX_WIDTH_POINTS, ProfilePreset, WidthPoint, WidthProfile};
-pub use stroke_style::{Cap, Dash, DashKind, Join, StrokeStyle};
-pub use camera::Camera;
 pub use nine_slice::symbol_box;
-pub use armature::{Armature, Bone, BoneId, JointAngle, Limits, Pose};
-pub use eval::{DisplayItem, DisplayList, Group, MAX_SYMBOL_DEPTH, evaluate, evaluate_guided, evaluate_layer_elements, evaluate_player, evaluate_scene, evaluate_scene_camera, evaluate_timeline, evaluate_timeline_at, guide_walk, instance_start};
-pub use actions::{Action, ButtonEvent, EventHandler, FrameScript, Language, PluginScript, SourceScript};
+pub use sound::{EnvelopePoint, FrameSound, Sound, SoundEffect, SoundFormat, SoundId, SoundSync};
+pub use stroke_style::{Cap, Dash, DashKind, Join, StrokeStyle};
+pub use width::{MAX_WIDTH_FACTOR, MAX_WIDTH_POINTS, ProfilePreset, WidthPoint, WidthProfile};
 
 use anicraft_geom::{Affine, FillRule, Path, Rect, Vec2};
 use serde::{Deserialize, Serialize};
@@ -109,8 +112,16 @@ pub struct GradientStop {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Paint {
     Solid(Rgba),
-    Linear { start: Vec2, end: Vec2, stops: Vec<GradientStop> },
-    Radial { center: Vec2, radius: f32, stops: Vec<GradientStop> },
+    Linear {
+        start: Vec2,
+        end: Vec2,
+        stops: Vec<GradientStop>,
+    },
+    Radial {
+        center: Vec2,
+        radius: f32,
+        stops: Vec<GradientStop>,
+    },
     /// A bitmap, its pixel (x, y) at local `matrix · (x, y)`; `repeat` tiles it, otherwise it
     /// shows once (an imported image is a rectangle of exactly its size, with no matrix).
     Bitmap {
@@ -144,7 +155,9 @@ impl Paint {
         match self {
             Paint::Solid(_) => self.clone(),
             Paint::Linear { start, end, stops } => Paint::Linear { start: m.apply(*start), end: m.apply(*end), stops: stops.clone() },
-            Paint::Radial { center, radius, stops } => Paint::Radial { center: m.apply(*center), radius: radius * m.mean_scale(), stops: stops.clone() },
+            Paint::Radial { center, radius, stops } => {
+                Paint::Radial { center: m.apply(*center), radius: radius * m.mean_scale(), stops: stops.clone() }
+            }
             Paint::Bitmap { bitmap, repeat, matrix } => Paint::Bitmap { bitmap: *bitmap, repeat: *repeat, matrix: m.mul(matrix) },
         }
     }
@@ -152,7 +165,10 @@ impl Paint {
     pub fn lerp(&self, o: &Paint, t: f32) -> Paint {
         let lerp_stops = |a: &[GradientStop], b: &[GradientStop]| -> Option<Vec<GradientStop>> {
             (a.len() == b.len()).then(|| {
-                a.iter().zip(b).map(|(x, y)| GradientStop { offset: anicraft_geom::lerp(x.offset, y.offset, t), color: x.color.lerp(y.color, t) }).collect()
+                a.iter()
+                    .zip(b)
+                    .map(|(x, y)| GradientStop { offset: anicraft_geom::lerp(x.offset, y.offset, t), color: x.color.lerp(y.color, t) })
+                    .collect()
             })
         };
         match (self, o) {
@@ -415,7 +431,22 @@ impl BlendMode {
         match self {
             BlendMode::HardLight => "Hard Light",
             m => {
-                const L: [&str; 14] = ["Normal", "Layer", "Darken", "Multiply", "Lighten", "Screen", "Overlay", "Hard Light", "Add", "Subtract", "Difference", "Invert", "Alpha", "Erase"];
+                const L: [&str; 14] = [
+                    "Normal",
+                    "Layer",
+                    "Darken",
+                    "Multiply",
+                    "Lighten",
+                    "Screen",
+                    "Overlay",
+                    "Hard Light",
+                    "Add",
+                    "Subtract",
+                    "Difference",
+                    "Invert",
+                    "Alpha",
+                    "Erase",
+                ];
                 L.get(BlendMode::ALL.iter().position(|x| *x == m).unwrap_or(0)).copied().unwrap_or("Normal")
             }
         }
@@ -589,7 +620,17 @@ fn white() -> Rgba {
 impl TextField {
     /// A single-line field of `kind`.
     pub fn new(kind: TextKind) -> TextField {
-        TextField { kind, lines: LineType::Single, selectable: true, border: false, border_color: Rgba::BLACK, background: false, background_color: Rgba::WHITE, max_chars: 0, variable: String::new() }
+        TextField {
+            kind,
+            lines: LineType::Single,
+            selectable: true,
+            border: false,
+            border_color: Rgba::BLACK,
+            background: false,
+            background_color: Rgba::WHITE,
+            max_chars: 0,
+            variable: String::new(),
+        }
     }
 
     /// The width text wraps at in a box `box_width` wide, if its lines wrap.
@@ -609,7 +650,11 @@ impl TextField {
 
     /// Values in range: names cut to length, at most [`MAX_FIELD_CHARS`] typed.
     pub fn sanitized(&self) -> TextField {
-        TextField { max_chars: self.max_chars.min(MAX_FIELD_CHARS as u32), variable: self.variable.chars().take(MAX_FIELD_NAME).collect(), ..self.clone() }
+        TextField {
+            max_chars: self.max_chars.min(MAX_FIELD_CHARS as u32),
+            variable: self.variable.chars().take(MAX_FIELD_NAME).collect(),
+            ..self.clone()
+        }
     }
 }
 
@@ -732,13 +777,33 @@ pub struct Keyframe {
 
 impl PartialEq for Keyframe {
     fn eq(&self, o: &Keyframe) -> bool {
-        self.start == o.start && self.duration == o.duration && self.tween == o.tween && self.motion == o.motion && self.hints == o.hints && self.label == o.label && self.sound == o.sound && self.script == o.script && self.pose == o.pose && arcs_eq(&self.elements, &o.elements)
+        self.start == o.start
+            && self.duration == o.duration
+            && self.tween == o.tween
+            && self.motion == o.motion
+            && self.hints == o.hints
+            && self.label == o.label
+            && self.sound == o.sound
+            && self.script == o.script
+            && self.pose == o.pose
+            && arcs_eq(&self.elements, &o.elements)
     }
 }
 
 impl Keyframe {
     pub fn new(start: u32, duration: u32) -> Self {
-        Keyframe { start, duration: duration.max(1), elements: Vec::new(), tween: None, motion: None, hints: Vec::new(), label: String::new(), sound: None, script: None, pose: Pose::default() }
+        Keyframe {
+            start,
+            duration: duration.max(1),
+            elements: Vec::new(),
+            tween: None,
+            motion: None,
+            hints: Vec::new(),
+            label: String::new(),
+            sound: None,
+            script: None,
+            pose: Pose::default(),
+        }
     }
     /// Mutable access to the elements whose ids satisfy `pick`, cloning only those.
     pub fn elements_mut_where(&mut self, mut pick: impl FnMut(ElementId) -> bool) -> Vec<&mut Element> {
@@ -1222,7 +1287,11 @@ pub struct Linkage {
 impl Linkage {
     pub fn check(&self) -> Result<(), String> {
         if !actions::valid_class_name(&self.class) {
-            return Err(format!("“{}” isn't a class name: letters, digits, _ and $ joined by dots, at most {} characters", self.class, actions::MAX_CLASS_CHARS));
+            return Err(format!(
+                "“{}” isn't a class name: letters, digits, _ and $ joined by dots, at most {} characters",
+                self.class,
+                actions::MAX_CLASS_CHARS
+            ));
         }
         if !self.base.is_empty() && !actions::valid_class_name(&self.base) {
             return Err(format!("“{}” isn't a class name", self.base));
@@ -1328,7 +1397,17 @@ impl From<DocumentFile> for Document {
         if let Some(tl) = f.timeline {
             scenes.insert(0, Arc::new(Scene { name: "Scene 1".into(), timeline: tl }));
         }
-        Document { stage: f.stage, scenes, library: f.library, bitmaps: f.bitmaps, sounds: f.sounds, library_tree: f.library_tree, document_class: f.document_class, publish: f.publish, next_id: f.next_id }
+        Document {
+            stage: f.stage,
+            scenes,
+            library: f.library,
+            bitmaps: f.bitmaps,
+            sounds: f.sounds,
+            library_tree: f.library_tree,
+            document_class: f.document_class,
+            publish: f.publish,
+            next_id: f.next_id,
+        }
     }
 }
 
@@ -1349,13 +1428,31 @@ static NO_TIMELINE: Timeline = Timeline { layers: Vec::new() };
 
 impl PartialEq for Document {
     fn eq(&self, o: &Document) -> bool {
-        self.stage == o.stage && self.next_id == o.next_id && self.document_class == o.document_class && arcs_eq(&self.scenes, &o.scenes) && arcs_eq(&self.library, &o.library) && arcs_eq(&self.bitmaps, &o.bitmaps) && arcs_eq(&self.sounds, &o.sounds) && arc_eq(&self.library_tree, &o.library_tree) && arc_eq(&self.publish, &o.publish)
+        self.stage == o.stage
+            && self.next_id == o.next_id
+            && self.document_class == o.document_class
+            && arcs_eq(&self.scenes, &o.scenes)
+            && arcs_eq(&self.library, &o.library)
+            && arcs_eq(&self.bitmaps, &o.bitmaps)
+            && arcs_eq(&self.sounds, &o.sounds)
+            && arc_eq(&self.library_tree, &o.library_tree)
+            && arc_eq(&self.publish, &o.publish)
     }
 }
 
 impl Default for Document {
     fn default() -> Self {
-        let mut d = Document { stage: Stage::default(), scenes: vec![Arc::new(Scene::new("Scene 1"))], library: Vec::new(), bitmaps: Vec::new(), sounds: Vec::new(), library_tree: Arc::default(), document_class: String::new(), publish: Arc::default(), next_id: 1 };
+        let mut d = Document {
+            stage: Stage::default(),
+            scenes: vec![Arc::new(Scene::new("Scene 1"))],
+            library: Vec::new(),
+            bitmaps: Vec::new(),
+            sounds: Vec::new(),
+            library_tree: Arc::default(),
+            document_class: String::new(),
+            publish: Arc::default(),
+            next_id: 1,
+        };
         let id = LayerId(d.alloc_id());
         d.timeline_mut(0).layers.push(Arc::new(Layer::new(id, "Layer 1")));
         d
@@ -1548,7 +1645,11 @@ fn sanitize_scripts(layer: &mut Arc<Layer>) {
     let bad_script = |k: &Keyframe| k.script.as_ref().is_some_and(FrameScript::needs_repair);
     let bad_events = |e: &Element| match &e.kind {
         ElementKind::Symbol { events, .. } => {
-            events.len() > actions::MAX_HANDLERS || events.iter().enumerate().any(|(i, h)| events.iter().take(i).any(|o| o.event == h.event) || actions::check_actions(&h.actions).is_err())
+            events.len() > actions::MAX_HANDLERS
+                || events
+                    .iter()
+                    .enumerate()
+                    .any(|(i, h)| events.iter().take(i).any(|o| o.event == h.event) || actions::check_actions(&h.actions).is_err())
         }
         _ => false,
     };
