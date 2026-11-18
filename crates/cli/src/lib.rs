@@ -2,6 +2,8 @@
 //! server (`mcp`). Every operation goes through the engine's command registry.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod control;
 pub mod mcp;
 
 use anicraft_engine::{Session, commands, format};
@@ -21,11 +23,23 @@ USAGE:
   anicraft-cli apng|webp <file|--sample> --out <anim.png|anim.webp> [--from A] [--to B] [--scale S]
                          [--loop forever|N] [--background yes] [--overwrite yes]
                                          full colour with real transparency (WebP: lossless)
+  anicraft-cli export <file|--sample> --format <id> --out <path> [--from A] [--to B] [--frame N]
+                      [--options '<json>'] [--overwrite yes]
+                                         any export format: the built-in ones (gif, apng, webp,
+                                         lottie, html, video, svg, png, png-sequence, sprite-sheet)
+                                         and exporter plug-ins (by id, with --plugins); --options
+                                         are the plug-in's options, or a built-in's extra params
+  anicraft-cli formats                   lists every export format, plug-ins included (JSON)
   anicraft-cli commands
   anicraft-cli run <file|--sample> <script.json> [--save <out.anicraft>]
+                                         a JSON array of {cmd, params}, or a saved command
+                                         (one undo step; nothing changes if a step fails)
   anicraft-cli exec <file|--sample> <command.id> [<json-params>] [--save <out.anicraft>]
   anicraft-cli new --out <file.anicraft> [--width W] [--height H] [--fps F]
   anicraft-cli guide --out <folder>      writes the user guide as HTML pages (open index.html)
+  anicraft-cli guide search <words> [--limit N] [--json yes]
+                                         searches the user guide: chapter, heading, page and a
+                                         passage for each result, best first (as its search page)
   anicraft-cli bench [--layers N] [--shapes N] [--frames N]   performance probe (use --release)
   anicraft-cli bench --check yes         the default scenario against the budgets in
                                          docs/performance.md; fails when one is missed
@@ -33,13 +47,18 @@ USAGE:
         {\"id\":1,\"cmd\":\"draw.rect\",\"params\":{\"x\":10,\"y\":10,\"w\":50,\"h\":50}}
   anicraft-cli mcp [file|--sample]       Model Context Protocol server on stdin/stdout,
                                          for AI assistants (see docs/mcp.md)
+  anicraft-cli mcp --bridge <port>       the same tools, acting live on the AniCraft window
+                                         started with `anicraft --control <port>`
+                                         (docs/control-protocol.md)
   anicraft-cli --version
 
   --plugins <folder>   loads the WebAssembly plug-ins in a folder first (also the
                        ANICRAFT_PLUGINS environment variable); see docs/plugins.md.
                        Without it, headless runs use no plug-ins, so they are repeatable.
 
-Frames on the command line are 1-based, as in the timeline.";
+Frame flags on the command line (--frame, --from, --to) are 1-based, as in the
+timeline. Frame numbers inside JSON params, scripts and command results are
+0-based, as everywhere in the engine.";
 
 /// Parsed flags: positional args plus `--key value` pairs.
 pub struct Args {
@@ -77,6 +96,12 @@ pub fn open_session(src: Option<&str>) -> Result<Session, String> {
     match src {
         None => Ok(Session::default()),
         Some("--sample") => Ok(Session::new(anicraft_doc::sample::demo())),
+        // An Animate document imports as File › Open does (#226), untitled.
+        Some(p) if anicraft_engine::is_animate(std::path::Path::new(p)) => {
+            let mut s = Session::default();
+            s.execute("file.open", &serde_json::json!({"path": p})).map_err(|e| e.to_string())?;
+            Ok(s)
+        }
         Some(p) => {
             let doc = format::load(std::path::Path::new(p)).map_err(|e| format!("{p}: {e}"))?;
             let mut s = Session::new(doc);
@@ -111,13 +136,42 @@ fn one_based(a: &Args, k: &str) -> Result<Option<u32>, String> {
     }
 }
 
+/// The usage of one subcommand, under `USAGE:`: its entries in [`USAGE`] with their
+/// continuation lines, so the two never drift apart. `None` for a name [`USAGE`] doesn't list.
+pub fn subcommand_usage(cmd: &str) -> Option<String> {
+    const ENTRY: &str = "  anicraft-cli ";
+    let mut out = String::new();
+    let mut taking = false;
+    // The entries are the block after `USAGE:`, up to the first blank line.
+    for line in USAGE.lines().skip_while(|l| *l != "USAGE:").skip(1).take_while(|l| !l.trim().is_empty()) {
+        if let Some(rest) = line.strip_prefix(ENTRY) {
+            // `apng|webp` names two subcommands; `--version` is also `version`.
+            let names = rest.split_whitespace().next().unwrap_or("");
+            taking = names.split('|').any(|n| n == cmd || n.strip_prefix("--") == Some(cmd));
+        }
+        if taking {
+            out.push('\n');
+            out.push_str(line);
+        }
+    }
+    (!out.is_empty()).then(|| format!("USAGE:{out}"))
+}
+
 /// Runs the CLI; returns the text to print on success.
 pub fn run(argv: &[String]) -> Result<String, String> {
     let Some((cmd, rest)) = argv.split_first() else { return Ok(USAGE.to_string()) };
+    if cmd == "help" || cmd == "--help" || cmd == "-h" {
+        if let Some(sub) = rest.first().filter(|s| *s != "--help" && *s != "-h") {
+            return subcommand_usage(sub).ok_or_else(|| format!("unknown subcommand '{sub}'\n\n{USAGE}"));
+        }
+        return Ok(USAGE.to_string());
+    }
+    if rest.iter().any(|a| a == "--help" || a == "-h") {
+        return subcommand_usage(cmd).ok_or_else(|| format!("unknown subcommand '{cmd}'\n\n{USAGE}"));
+    }
     let a = Args::parse(rest)?;
     let src = a.positional.first().map(String::as_str);
     match cmd.as_str() {
-        "help" | "--help" | "-h" => Ok(USAGE.to_string()),
         // The release packaging smoke-tests every build with this (packaging/, ADR 0026).
         "version" | "--version" | "-V" => Ok(format!("anicraft-cli {}", env!("CARGO_PKG_VERSION"))),
         "commands" => {
@@ -125,8 +179,26 @@ pub fn run(argv: &[String]) -> Result<String, String> {
             serde_json::to_string_pretty(&list).map_err(|e| e.to_string())
         }
         // The user guide as the static HTML book Help › User Guide opens (ADR 0069).
+        // Searching it, with the ranking the book's search page uses (ADR 0096).
+        "guide" if src == Some("search") => {
+            let words = a.positional.get(1..).unwrap_or_default().join(" ");
+            if anicraft_guide::search::terms(&words).is_empty() {
+                return Err("guide search needs words to look for, e.g. anicraft-cli guide search onion skin".into());
+            }
+            let limit = a.num::<usize>("limit")?.unwrap_or(10).clamp(1, 100);
+            let hits = anicraft_guide::search::search(anicraft_guide::PAGES, &anicraft_guide::search::sections(anicraft_guide::PAGES), &words, limit);
+            if a.flag("json").is_some_and(|v| v == "yes") {
+                let list: Vec<Value> = hits.iter().map(|h| json!({"chapter": h.chapter, "heading": h.heading, "url": h.url, "snippet": h.snippet, "score": h.score})).collect();
+                return serde_json::to_string_pretty(&list).map_err(|e| e.to_string());
+            }
+            if hits.is_empty() {
+                return Ok(format!("nothing in the user guide matches “{}”", words.trim()));
+            }
+            let lines: Vec<String> = hits.iter().enumerate().map(|(i, h)| format!("{}. {} · {}\n   {}\n   {}", i + 1, h.heading, h.chapter, h.url, h.snippet)).collect();
+            Ok(lines.join("\n\n"))
+        }
         "guide" => {
-            let out = a.flag("out").ok_or("guide needs --out <folder>")?;
+            let out = a.flag("out").ok_or("guide needs --out <folder>, or search <words>")?;
             let n = anicraft_guide::write_site(std::path::Path::new(out)).map_err(|e| format!("{out}: {e}"))?;
             Ok(format!("wrote {n} files of the user guide to {out}; open {out}/index.html"))
         }
@@ -187,6 +259,12 @@ pub fn run(argv: &[String]) -> Result<String, String> {
             }
             exec(&mut s, &format!("file.export_{cmd}"), &p).map(|v| v.to_string())
         }
+        "formats" => {
+            let mut s = session(&a, None)?;
+            let v = exec(&mut s, "file.export_formats", &json!({}))?;
+            serde_json::to_string_pretty(&v["formats"]).map_err(|e| e.to_string())
+        }
+        "export" => export(&a, src),
         "new" => {
             let mut s = Session::default();
             let out = a.flag("out").ok_or("new needs --out <file.anicraft>")?;
@@ -220,7 +298,16 @@ pub fn run(argv: &[String]) -> Result<String, String> {
             let script = a.positional.get(1).ok_or("run needs a script.json")?;
             let text = std::fs::read_to_string(script).map_err(|e| format!("{script}: {e}"))?;
             // Windows editors often save UTF-8 with a byte-order mark; JSON parsers reject it.
-            let steps: Vec<Value> = serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| format!("{script}: expected a JSON array of {{cmd, params}}: {e}"))?;
+            let parsed: Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| format!("{script}: expected a JSON array of {{cmd, params}} or a saved command: {e}"))?;
+            // A saved command (ADR 0097) runs as one transactional step, as in the app.
+            if parsed.is_object() {
+                let v = exec(&mut s, "macro.run", &json!({"path": script}))?;
+                if let Some(out) = a.flag("save") {
+                    exec(&mut s, "file.save", &json!({"path": out}))?;
+                }
+                return serde_json::to_string_pretty(&v).map_err(|e| e.to_string());
+            }
+            let steps: Vec<Value> = serde_json::from_value(parsed).map_err(|e| format!("{script}: expected a JSON array of {{cmd, params}}: {e}"))?;
             let mut results = Vec::new();
             for (i, step) in steps.iter().enumerate() {
                 let id = step.get("cmd").and_then(Value::as_str).ok_or_else(|| format!("step {}: missing \"cmd\"", i + 1))?;
@@ -241,6 +328,24 @@ pub fn run(argv: &[String]) -> Result<String, String> {
             Ok(String::new())
         }
         "mcp" => {
+            if let Some(target) = a.flag("bridge") {
+                if src.is_some() || a.flag("plugins").is_some() {
+                    return Err("mcp --bridge acts on the open AniCraft window: it takes no file or --plugins".into());
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let _ = target;
+                    return Err("mcp --bridge needs sockets, which this build doesn't have".into());
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let mut b = control::Bridge::new(control::parse_bridge_target(target)?);
+                    let stdin = std::io::stdin();
+                    let mut stdout = std::io::stdout();
+                    mcp::serve(&mut b, stdin.lock(), &mut stdout).map_err(|e| e.to_string())?;
+                    return Ok(String::new());
+                }
+            }
             let mut s = session(&a, src)?;
             let stdin = std::io::stdin();
             let mut stdout = std::io::stdout();
@@ -249,6 +354,50 @@ pub fn run(argv: &[String]) -> Result<String, String> {
         }
         other => Err(format!("unknown subcommand '{other}'\n\n{USAGE}")),
     }
+}
+
+/// `export --format <id>`: a built-in format through its own command, or an exporter plug-in
+/// through `file.export_plugin` (ADR 0088).
+fn export(a: &Args, src: Option<&str>) -> Result<String, String> {
+    let mut s = session(a, Some(src.ok_or("export needs a file or --sample")?))?;
+    let id = a.flag("format").ok_or("export needs --format <id> (anicraft-cli formats lists them)")?;
+    let out = a.flag("out").ok_or("export needs --out <path>")?;
+    let list = exec(&mut s, "file.export_formats", &json!({}))?;
+    let formats = list["formats"].as_array().cloned().unwrap_or_default();
+    let Some(f) = formats.iter().find(|f| f["id"] == id) else {
+        let ids: Vec<&str> = formats.iter().filter_map(|f| f["id"].as_str()).collect();
+        return Err(format!("no export format '{id}' (formats: {}; exporter plug-ins load with --plugins <folder>)", ids.join(", ")));
+    };
+    let (cmd, target, plugin) = (f["command"].as_str().unwrap_or(""), f["target"].as_str().unwrap_or("path"), f["plugin"] == true);
+    let mut p = json!({ target: out });
+    let options: Option<Value> = a.flag("options").map(|t| serde_json::from_str(t).map_err(|e| format!("--options is not JSON: {e}"))).transpose()?;
+    if plugin {
+        p["format"] = json!(id);
+        if let Some(o) = options {
+            p["options"] = o;
+        }
+    } else if let Some(Value::Object(o)) = options {
+        for (k, v) in o {
+            p[k] = v;
+        }
+    } else if options.is_some() {
+        return Err("--options must be a JSON object".into());
+    }
+    if matches!(id, "png" | "svg") {
+        if let Some(f) = one_based(a, "frame")? {
+            p["frame"] = json!(f);
+        }
+    } else {
+        for k in ["from", "to"] {
+            if let Some(f) = one_based(a, k)? {
+                p[k] = json!(f);
+            }
+        }
+    }
+    if a.flag("overwrite").is_some_and(|v| v == "yes" || v == "true") {
+        p["confirm"] = json!(true);
+    }
+    exec(&mut s, cmd, &p).map(|v| v.to_string())
 }
 
 fn avg_ms(n: u32, mut f: impl FnMut(u32)) -> f64 {
@@ -478,6 +627,17 @@ pub fn serve<R: BufRead, W: Write>(s: &mut Session, input: R, out: &mut W) -> st
 mod tests {
     use super::*;
 
+    /// #226: `info`, `render` and the other subcommands take an Animate document as File › Open
+    /// does (an import, untitled), not only `.anicraft` files.
+    #[test]
+    fn subcommands_open_animate_documents() {
+        let xfl = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../xfl/tests/corpus/shapes/shapes.xfl");
+        let s = open_session(Some(&xfl.display().to_string())).unwrap();
+        assert!(s.path.is_none() && !s.doc.timeline(0).layers.is_empty());
+        let info = run(&["info".to_string(), xfl.display().to_string()]).unwrap();
+        assert!(info.contains("\"layers\""), "{info}");
+    }
+
     #[test]
     fn serve_round_trip() {
         let mut s = Session::default();
@@ -582,11 +742,168 @@ mod tests {
     }
 
     #[test]
+    fn export_any_format_built_in_or_plugin() {
+        let dir = std::env::temp_dir().join(format!("anicraft-cli-export-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("plugins")).unwrap();
+        let argv = |v: &[&str]| -> Vec<String> { v.iter().map(|s| s.to_string()).collect() };
+        // A built-in format by id.
+        let svg = dir.join("f.svg");
+        run(&argv(&["export", "--sample", "--format", "svg", "--frame", "3", "--out", svg.to_str().unwrap()])).unwrap();
+        assert!(std::fs::read_to_string(&svg).unwrap().contains("<svg"));
+        // An exporter plug-in that writes "frames:" and the count it was handed.
+        let m = r#"{"id":"org.test.count","name":"Count","kind":"exporter","format":{"name":"Count","extension":"txt"}}"#;
+        let req = r#"{"op":"movie"}"#;
+        let wat = format!(
+            r#"(module (import "anicraft" "call" (func $call (param i32 i32) (result i32))) (import "anicraft" "response" (func $response (param i32 i32) (result i32)))
+              (memory (export "memory") 4) (data (i32.const 1024) "{}") (data (i32.const 4096) "{}")
+              (func (export "ac_abi_version") (result i32) i32.const 1)
+              (func (export "ac_manifest") (result i64) (i64.or (i64.shl (i64.const {}) (i64.const 32)) (i64.const 1024)))
+              (func (export "ac_alloc") (param i32) (result i32) i32.const 60000)
+              (func (export "ac_export") (param i32 i32) (result i64) (local $n i32)
+                (local.set $n (call $response (i32.const 100000) (call $call (i32.const 4096) (i32.const {}))))
+                (i64.or (i64.shl (i64.extend_i32_u (local.get $n)) (i64.const 32)) (i64.const 100000))))"#,
+            m.replace('"', "\\22"),
+            req.replace('"', "\\22"),
+            m.len(),
+            req.len()
+        );
+        std::fs::write(dir.join("plugins").join("count.wasm"), wat::parse_str(&wat).unwrap()).unwrap();
+        let plugins = dir.join("plugins");
+        let listed = run(&argv(&["formats", "--plugins", plugins.to_str().unwrap()])).unwrap();
+        assert!(listed.contains("org.test.count") && listed.contains("\"gif\""));
+        let out = dir.join("movie.txt");
+        let v = run(&argv(&["export", "--sample", "--format", "org.test.count", "--from", "2", "--to", "5", "--out", out.to_str().unwrap(), "--plugins", plugins.to_str().unwrap()])).unwrap();
+        assert!(v.contains("\"frames\":4"), "{v}");
+        let movie: Value = serde_json::from_slice(&std::fs::read(&out).unwrap()).unwrap();
+        assert_eq!((movie["result"]["from"].as_u64(), movie["result"]["frames"].as_u64()), (Some(1), Some(4)));
+        // Replacing it needs --overwrite yes; unknown formats name the known ones.
+        assert!(run(&argv(&["export", "--sample", "--format", "org.test.count", "--out", out.to_str().unwrap(), "--plugins", plugins.to_str().unwrap()])).is_err());
+        run(&argv(&["export", "--sample", "--format", "org.test.count", "--out", out.to_str().unwrap(), "--plugins", plugins.to_str().unwrap(), "--overwrite", "yes"])).unwrap();
+        let err = run(&argv(&["export", "--sample", "--format", "org.test.count", "--out", out.to_str().unwrap()])).unwrap_err();
+        assert!(err.contains("lottie") && err.contains("--plugins"), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_takes_a_saved_command_file() {
+        let dir = std::env::temp_dir().join(format!("anicraft-cli-macro-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("Spin.json");
+        std::fs::write(&file, r#"{"format": "anicraft-command", "version": 1, "steps": [{"cmd": "edit.select_all"}, {"cmd": "modify.rotate_cw"}]}"#).unwrap();
+        let out = run(&["run".into(), "--sample".into(), file.display().to_string()]).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!((v["name"].as_str(), v["steps"].as_u64()), (Some("Spin"), Some(2)), "{out}");
+        // A failing step names itself and leaves nothing behind.
+        std::fs::write(&file, r#"{"steps": [{"cmd": "edit.select_all"}, {"cmd": "modify.rotate_cw"}, {"cmd": "layer.set_height", "params": {"height": 7}}]}"#).unwrap();
+        let e = run(&["run".into(), "--sample".into(), file.display().to_string()]).unwrap_err();
+        assert!(e.contains("stopped at step 3 of 3"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn usage_and_errors() {
         assert!(run(&[]).unwrap().contains("USAGE"));
         assert!(run(&["bogus".into()]).is_err());
         assert!(run(&["info".into()]).is_err());
         assert!(run(&["commands".into()]).unwrap().contains("timeline.insert_keyframe"));
         assert!(run(&["guide".into()]).is_err());
+    }
+
+    #[test]
+    fn guide_search_prints_chapter_heading_page_and_passage() {
+        let s = |v: &[&str]| run(&v.iter().map(|x| x.to_string()).collect::<Vec<_>>());
+        let out = s(&["guide", "search", "onion", "skin"]).unwrap();
+        let first = out.lines().next().unwrap_or("");
+        assert_eq!(first, "1. Onion skin · The timeline", "{out}");
+        assert!(out.contains("timeline.html#onion-skin"), "{out}");
+        let json: Value = serde_json::from_str(&s(&["guide", "search", "export", "gif", "--json", "yes", "--limit", "3"]).unwrap()).unwrap();
+        let list = json.as_array().unwrap();
+        assert!(list.len() <= 3 && list[0]["url"] == "getting-started.html#export-a-gif-or-a-video", "{json}");
+        assert!(s(&["guide", "search", "zzzzqqq"]).unwrap().starts_with("nothing in the user guide matches"));
+        assert!(s(&["guide", "search"]).is_err() && s(&["guide", "search", "?!"]).is_err());
+        assert!(s(&["guide", "search", "pen", "--limit", "x"]).is_err());
+    }
+
+    #[test]
+    fn usage_clarifies_frame_numbering_split() {
+        let help = run(&["help".into()]).unwrap();
+        assert!(help.contains("0-based"), "CLI usage should clarify that JSON command frame numbers are 0-based");
+        assert!(help.contains("1-based"), "CLI usage should clarify that command-line frame flags are 1-based");
+
+        let dir = std::env::temp_dir().join(format!("anicraft-cli-frame-split-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out_cli = dir.join("cli.png");
+        let out_exec = dir.join("exec.png");
+
+        let res_cli: serde_json::Value = serde_json::from_str(
+            &run(&["render".into(), "--sample".into(), "--frame".into(), "1".into(), "--out".into(), out_cli.to_str().unwrap().into()]).unwrap(),
+        )
+        .unwrap();
+
+        let res_exec: serde_json::Value = serde_json::from_str(
+            &run(&[
+                "exec".into(),
+                "--sample".into(),
+                "file.export_png".into(),
+                format!(r#"{{"path": "{}", "frame": 0}}"#, out_exec.to_str().unwrap().replace('\\', "/")),
+            ])
+            .unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(res_cli["frame"], 0);
+        assert_eq!(res_exec["frame"], 0);
+        assert_eq!(std::fs::read(&out_cli).unwrap(), std::fs::read(&out_exec).unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn subcommand_help_prints_usage() {
+        let subcommands = ["info", "render", "render-seq", "gif", "apng", "webp", "export", "formats", "commands", "run", "exec", "new", "guide", "bench", "serve", "mcp"];
+        for sub in subcommands {
+            let out_long = run(&[sub.to_string(), "--help".to_string()]).unwrap();
+            assert!(out_long.contains("USAGE:"), "help for {sub} should contain USAGE:");
+            assert!(out_long.contains(sub), "help for {sub} should mention {sub}");
+
+            let out_short = run(&[sub.to_string(), "-h".to_string()]).unwrap();
+            assert_eq!(out_long, out_short);
+
+            let out_help = run(&["help".to_string(), sub.to_string()]).unwrap();
+            assert_eq!(out_long, out_help);
+        }
+
+        // Subcommand help with other arguments present
+        assert_eq!(
+            run(&["render".into(), "--scale".into(), "2".into(), "--help".into()]).unwrap(),
+            run(&["render".into(), "--help".into()]).unwrap()
+        );
+
+        // Unknown subcommand with --help or help still reports unknown
+        assert!(run(&["bogus".into(), "--help".into()]).is_err());
+        assert!(run(&["help".into(), "bogus".into()]).is_err());
+    }
+
+    #[test]
+    fn subcommand_usage_matches_usage_text() {
+        let subcommands =
+            ["info", "render", "render-seq", "gif", "apng", "webp", "export", "formats", "commands", "run", "exec", "new", "guide", "bench", "serve", "mcp", "version"];
+        for sub in subcommands {
+            let u = subcommand_usage(sub).expect("subcommand_usage should exist");
+            let body = u.strip_prefix("USAGE:\n").expect("should start with USAGE:\n");
+            assert!(USAGE.contains(body), "USAGE should contain body for {sub}");
+        }
+        assert_eq!(subcommand_usage("bogus"), None);
+        // Every entry of a subcommand with several comes along, with its continuation lines.
+        let guide = subcommand_usage("guide").unwrap_or_default();
+        assert!(guide.contains("guide --out") && guide.contains("guide search") && guide.contains("best first"), "{guide}");
+        assert!(!guide.contains("bench"), "{guide}");
+        let export = subcommand_usage("export").unwrap_or_default();
+        assert!(export.contains("--options") && export.contains("exporter plug-ins"), "{export}");
+        // Words inside an entry are not subcommands.
+        for word in ["anicraft-cli", "--sample", "file", "", "apng|webp", "--plugins"] {
+            assert_eq!(subcommand_usage(word), None, "{word:?}");
+        }
     }
 }

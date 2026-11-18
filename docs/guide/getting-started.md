@@ -24,8 +24,34 @@ files show AniCraft under "Open with", but your default app for them doesn't cha
 command-line tool, `anicraft-cli`, is installed alongside the app (see
 [Working headless](working-headless.md)).
 
-There is also a web version that runs in a modern browser. It can't play sound, export video
-or install plug-ins yet, and menu items that can't work there are dimmed and say why.
+### Running the AppImage
+
+The first time you start AniCraft from an `.AppImage`, a small card at the bottom right offers to
+**Add to Menu**. Say yes and AniCraft appears in your applications menu with its icon, and
+double-clicking a `.anicraft`, `.fla` or `.xfl` file opens it. Only your own data folder
+(`~/.local/share`) changes; nothing is installed for other users. **Not Now** puts the card away
+for good. Either way, **Preferences › About** has the button to add AniCraft to the menu or
+remove it again. If you move the AppImage or an update replaces it, the menu follows the copy
+you start next.
+
+### Portable copies
+
+The Windows `.zip` and the Linux `.tar.gz` are **portable**: they keep your preferences,
+autosaved work, logs, plug-ins, templates, brushes, filter presets, workspaces and recent files
+in a `data` folder beside AniCraft, not in your user folder. Unpack one onto a USB stick and
+your setup travels with it. A file named `anicraft-portable` next to the program is what makes a
+copy portable: delete it to use your user folder instead, or put one next to an `.AppImage` or
+next to `AniCraft.app` on a Mac to make those portable too. If the `data` folder can't be
+written (a read-only disc, say), AniCraft uses your user folder and says so. To bring your
+existing settings along, copy the contents of your user settings folder (Preferences › About
+shows it in an installed copy) into the portable copy's `data` folder.
+
+**Preferences › About** shows which kind of copy you are running and every folder it uses, each
+with an **Open** button.
+
+There is also a web version that runs in a modern browser. Sound starts on your first play
+through Web Audio. It can't export video or install plug-ins yet, and menu items that can't
+work there are dimmed and say why.
 
 To get newer versions later, choose **Help › Check for Updates…**.
 
@@ -122,8 +148,10 @@ Documents are saved as `.anicraft` files. Each one is a single file that holds e
 including the images and sounds you imported. To save a copy under a new name, choose
 **File › Save As…** (**Ctrl+Shift+S**).
 
-AniCraft works on one document at a time. If you open or create another document while yours
-has unsaved changes, it asks you first, and it does the same when you quit.
+You can have several documents open, each in its own tab (see
+[Document tabs](workspace.md#document-tabs)). Opening or creating another document never
+closes yours. If you close a tab or quit while a document has unsaved changes, AniCraft asks
+you first.
 
 To start new documents from this one later, choose **File › Save as Template…**. Give the
 template a name and a category. It then appears under **My templates** on the start screen.
@@ -134,11 +162,12 @@ While you work, AniCraft quietly keeps a recovery copy of your unsaved changes. 
 does this every minute, or after 25 changes, whichever comes first. The status bar shows when
 it last did ("autosaved just now"). The copy never replaces your own file. It is kept in
 AniCraft's settings folder and removed when you save or quit normally. Drawing never waits
-for it.
+for it. Every open document has its own recovery copy.
 
-If AniCraft closes unexpectedly, the next start shows a **Recover unsaved work** window:
+If AniCraft closes unexpectedly, the next start shows a **Recover unsaved work** window. It
+lists every document that had unsaved changes:
 
-* **Restore** opens the work as an unsaved document. Save then puts it back where it was.
+* **Restore** opens the work as an unsaved document, in a tab of its own. Save then puts it back where it was.
   If the file was saved after the copy was made, Save asks for a new name instead, so
   nothing is overwritten.
 * **Discard…** deletes the copy. You have to confirm it, because this can't be undone.

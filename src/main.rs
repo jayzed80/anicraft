@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! anicraft [file.anicraft] [--screenshot out.png] [--renderer wgpu|gl] [--open <panel>]
-//!          [--theme graphite|high-contrast] [--scale <percent>] [--lang <code>|auto|pseudo]
+//!          [--theme dark|light|high-contrast] [--scale <percent>] [--lang <code>|auto|pseudo]
 //! anicraft --version
 //! ```
 //! `--screenshot` starts normally, draws ~120 frames, saves the window as PNG and exits.
@@ -23,21 +23,37 @@
 mod i18n;
 mod a11y;
 mod actions_panel;
+mod aids_dialog;
 mod app;
+mod audio_keys;
 mod autosave;
 mod brush_panel;
 mod brushtool;
+mod colour;
+mod colour_panel;
 mod envelope;
 mod find_panel;
 mod publish_panel;
 mod erasertool;
+mod bind_tool;
+mod warp_tool;
 mod bone_tool;
 mod camera_tool;
+mod context_help;
 mod convert_symbol;
+mod layer_depth;
 mod layer_props;
+mod desktop_ui;
 mod dialogs;
+mod dock;
+mod dock_float;
+mod dock_ui;
 mod drop;
+mod ease_editor;
 mod gpu_stage;
+#[cfg(not(target_arch = "wasm32"))]
+mod gpu_watch;
+mod gradient_tool;
 mod icons;
 mod keymap;
 mod library;
@@ -48,50 +64,85 @@ mod mixed;
 mod motion_editor;
 mod movie_explorer;
 mod panels;
+mod parenting;
 mod motion_path;
 mod onion;
 mod pathtools;
 mod platform;
+mod plugin_export_ui;
+#[cfg(test)]
+mod plugin_fixture_tests;
+#[cfg(test)]
+mod plugin_ui_tests;
+#[cfg(test)]
+mod macros_ui_tests;
+mod macros_ui;
 mod plugins_ui;
 mod prefs;
 mod recent;
+#[cfg(not(target_arch = "wasm32"))]
+mod remote;
+mod rich_edit;
+mod rulers;
 mod scale_grid;
+mod shape_envelope;
+mod shape_dialogs;
 mod sound;
 mod shape_hints;
 mod stage;
 mod stage_a11y;
+mod swatches_panel;
+mod tabs;
 mod start;
+mod startup;
 mod templates;
 mod test_movie;
 mod theme;
+mod theme_file;
 mod timeline;
 #[cfg(target_arch = "wasm32")]
 mod web;
 mod widthtool;
+mod windows;
+mod xform;
+mod workspaces_window;
 
 #[cfg(not(target_arch = "wasm32"))]
 use anicraft_engine::Session;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 
-/// The session to start with: the file given on the command line (through `file.open`, so
-/// `.fla` / `.xfl` import works the same as from the menu), else the sample. Also the import
-/// report of an Animate document, for the status bar.
+/// What opening the command line's file said, for the status bar.
 #[cfg(not(target_arch = "wasm32"))]
-fn open_session(file: Option<&Path>) -> (Session, Option<String>) {
-    let Some(p) = file else { return (Session::new(anicraft_engine::doc::sample::demo()), None) };
+#[derive(Debug, PartialEq)]
+enum Opened {
+    /// Nothing to report (no file, or an AniCraft document).
+    Quiet,
+    /// The import report of an Animate document.
+    Imported(String),
+    /// It didn't open (the sample is there instead): the file's name and why.
+    Failed(String, String),
+}
+
+/// The session to start with: the file given on the command line (through `file.open`, so
+/// `.fla` / `.xfl` import works the same as from the menu), else the sample. A file that can't
+/// be opened says why in the window (#226: a release build has no console, so the reason used
+/// to go nowhere and a double-clicked document seemed to open as the sample).
+#[cfg(not(target_arch = "wasm32"))]
+fn open_session(file: Option<&Path>) -> (Session, Opened) {
+    let Some(p) = file else { return (Session::new(anicraft_engine::doc::sample::demo()), Opened::Quiet) };
     let mut s = Session::default();
     match s.execute("file.open", &serde_json::json!({"path": p.display().to_string()})) {
-        Ok(v) => {
-            let report = v.get("report").and_then(|r| r.as_str()).map(str::to_string);
-            if let Some(r) = &report {
-                println!("{r}");
+        Ok(v) => match v.get("report").and_then(|r| r.as_str()) {
+            Some(r) => {
+                startup::line(&format!("imported {}: {r}", p.display()));
+                (s, Opened::Imported(r.to_string()))
             }
-            (s, report)
-        }
+            None => (s, Opened::Quiet),
+        },
         Err(e) => {
-            eprintln!("could not open {}: {e}; starting with the sample", p.display());
-            (Session::new(anicraft_engine::doc::sample::demo()), None)
+            startup::line(&format!("could not open {}: {e}; starting with the sample", p.display()));
+            (Session::new(anicraft_engine::doc::sample::demo()), Opened::Failed(crate::recent::display_name(p), e.to_string()))
         }
     }
 }
@@ -102,6 +153,9 @@ fn open_session(file: Option<&Path>) -> (Session, Option<String>) {
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Look {
     theme: Option<theme::Palette>,
+    /// `--theme <file>.json`: a theme file of the user's (ADR 0117), its folder the themes
+    /// folder for the run.
+    theme_file: Option<PathBuf>,
     scale: Option<f32>,
     /// `--lang`: a locale code, `auto` or `pseudo` (ADR 0040).
     lang: Option<String>,
@@ -111,12 +165,11 @@ struct Look {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn run(renderer: eframe::Renderer, file: Option<&Path>, shot: Option<PathBuf>, open: Option<String>, look: Look) -> eframe::Result {
-    let options = eframe::NativeOptions {
+fn run(attempt: startup::Attempt, file: Option<&Path>, shot: Option<PathBuf>, open: Option<String>, look: Look, control: Option<u16>) -> eframe::Result {
+    let options = attempt.options(eframe::NativeOptions {
         viewport: platform::viewport(egui::ViewportBuilder::default().with_title("AniCraft").with_inner_size([1600.0, 940.0]).with_min_inner_size([960.0, 600.0])),
-        renderer,
         ..Default::default()
-    };
+    });
     // The embedded interface font joins the text library before anything lays text out:
     // opening an Animate document from the command line lays its text out right here.
     anicraft_engine::text::Fonts::register(theme::embedded_fonts());
@@ -130,8 +183,13 @@ fn run(renderer: eframe::Renderer, file: Option<&Path>, shot: Option<PathBuf>, o
         Box::new(move |cc| {
             // A document the system hands over while AniCraft is idle wakes it (ADR 0062).
             platform::wake_on_requests(&cc.egui_ctx);
+            startup::log_adapter(cc.wgpu_render_state.as_ref());
             let starting_fresh = file_given.is_none() && shot.is_none();
             let mut a = app::App::new(cc, session, shot);
+            // A file named on the command line keeps its tab, even an imported one (ADR 0112).
+            if file_given.is_some() {
+                a.tabs.keep_first();
+            }
             if let Some(s) = a.shot.as_mut() {
                 s.width = look.shot_width;
             }
@@ -142,11 +200,17 @@ fn run(renderer: eframe::Renderer, file: Option<&Path>, shot: Option<PathBuf>, o
             if starting_fresh && a.prefs.start_screen {
                 start::open(&mut a);
             }
-            a.preview_look(&cc.egui_ctx, look.theme, look.scale);
+            a.preview_look(&cc.egui_ctx, look.theme, look.theme_file.as_deref(), look.scale);
+            // `--control`: an assistant can edit this window live (ADR 0104).
+            if let Some(port) = control {
+                remote::start(&mut a, &cc.egui_ctx, port);
+            }
             a.open_panel(open.as_deref());
-            // An imported document says what came across, as opening it from the menu does.
-            if let Some(r) = report {
-                a.status_ok(tr!("{report} Save to keep it as an AniCraft document.", report = r));
+            match report {
+                // An imported document says what came across, as opening it from the menu does.
+                Opened::Imported(r) => a.status_ok(tr!("{report} Save to keep it as an AniCraft document.", report = r)),
+                Opened::Failed(name, e) => a.status_err(tr!("Could not open {name}: {e}", name = name, e = e)),
+                Opened::Quiet => {}
             }
             Ok(Box::new(a))
         }),
@@ -171,6 +235,8 @@ struct Args {
     open: Option<String>,
     renderer: Option<String>,
     look: Look,
+    /// `--control <port>`: the live control port (ADR 0104).
+    control: Option<u16>,
     /// `--version` / `--help`: print and leave.
     print: Option<Print>,
 }
@@ -180,6 +246,8 @@ struct Args {
 enum Print {
     Version,
     Help,
+    /// `--check-theme <file>`: whether a theme file would be used, and why not (ADR 0117).
+    CheckTheme(PathBuf),
 }
 
 /// Reads the arguments (without the program name). `Err` is the message for a bad one.
@@ -191,15 +259,19 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         match a.as_str() {
             "--screenshot" => out.shot = Some(PathBuf::from(args.next().ok_or("--screenshot needs a file name")?)), // i18n-exempt: a console message
             "--open" => out.open = args.next(),
+            // i18n-exempt: a console message
+            "--control" => out.control = Some(anicraft_cli::control::parse_port(&args.next().unwrap_or_default()).map_err(|e| format!("--control: {e}"))?),
             "--renderer" => out.renderer = args.next(),
             "--shot-width" => match args.next().and_then(|s| s.parse::<u32>().ok()) {
                 Some(w) if (64..=8192).contains(&w) => out.look.shot_width = Some(w),
                 _ => return Err("--shot-width takes a width in pixels, from 64 to 8192".into()), // i18n-exempt: a console message
             },
             "--theme" => match args.next().as_deref() {
-                Some("graphite") => out.look.theme = Some(theme::Palette::Graphite),
+                Some("graphite" | "dark") => out.look.theme = Some(theme::Palette::Graphite),
+                Some("light") => out.look.theme = Some(theme::Palette::Light),
                 Some("high-contrast") => out.look.theme = Some(theme::Palette::HighContrast),
-                other => return Err(format!("--theme takes graphite or high-contrast, not {}", other.unwrap_or("nothing"))), // i18n-exempt: a console message
+                Some(file) if file.to_ascii_lowercase().ends_with(".json") => out.look.theme_file = Some(PathBuf::from(file)),
+                other => return Err(format!("--theme takes dark (graphite), light, high-contrast or a theme file (.json), not {}", other.unwrap_or("nothing"))), // i18n-exempt: a console message
             },
             "--scale" => match args.next().and_then(|s| s.trim_end_matches('%').parse::<f32>().ok()) {
                 Some(pct) if pct.is_finite() => out.look.scale = Some(pct / 100.0),
@@ -215,6 +287,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             // Printed by the release packaging checks and for bug reports.
             "--version" | "-V" => out.print = Some(Print::Version),
             "--help" | "-h" => out.print = Some(Print::Help),
+            "--check-theme" => out.print = Some(Print::CheckTheme(PathBuf::from(args.next().ok_or("--check-theme needs a theme file")?))), // i18n-exempt: a console message
             // Not a file: what older macOS added when Finder started an app.
             other if platform::is_system_argument(other) => {}
             other => out.file = Some(PathBuf::from(other)),
@@ -226,14 +299,18 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
 /// `--help` (the console's text, in English).
 #[cfg(not(target_arch = "wasm32"))]
 // i18n-exempt: the --help console text
-const HELP: &str = "anicraft [file.anicraft|file.fla|file.xfl] [--version] [--screenshot out.png [--shot-width <px>]] [--renderer wgpu|gl] [--theme graphite|high-contrast] [--scale <percent>] [--lang <code>|auto|pseudo] [--open palette|shortcuts|lastscene|start|drop|droplibrary|select|about|files|confirm|transform|points|merge|rawparts|rawedit|rawsub|rawpoints|rawsnap|symboledit|nineslice|nineslicedit|brush|brushing|brushlibrary|brushcurve|paintbrush|eraser|erasing|eyedropper|pen|frames|span|bucket|tlzoom|tlwide|motion|motionspan|motionpath|motionpoints|motionedit|motionpins|motionpinsspan|hints|hintsend|camera|cameraview|filters|strokes|prefs|licenses|zoom|recovery|plugins|actions|script|scriptproblems|testmovie|testmovieinside|testscript|textfields|testtext|button|testhits|exporthtml|publish|publishreport|publishanim|sound|envelope|library|librarymenu|colour|layerprops|frameview|layercolour|timelinepolish]\n\
-     --renderer   force the GPU backend (also ANICRAFT_RENDERER); default wgpu, falling back to OpenGL\n\
+const HELP: &str = "anicraft [file.anicraft|file.fla|file.xfl] [--version] [--screenshot out.png [--shot-width <px>]] [--renderer gl|wgpu|vulkan|dx12|metal] [--theme dark|light|high-contrast|<file>.json] [--check-theme <file>.json] [--scale <percent>] [--lang <code>|auto|pseudo] [--control <port>] [--open palette|shortcuts|helpbone|lastscene|start|drop|droplibrary|select|selectzoom|about|files|confirm|transform|shapecommands|expandfill|softenfill|origins|pivot|layeropacity|points|merge|rawparts|rawedit|rawsub|rawpoints|rawsnap|rulers|editguides|editgrid|symboledit|groups|combine|nineslice|nineslicedit|brush|brushing|polystar|paintinside|drawingedit|shapeenvelope|brushlibrary|brushcurve|paintbrush|eraser|erasing|erasemerge|tiltbrush|eyedropper|pen|frames|span|bucket|tlzoom|tlwide|motion|motionspan|motionpath|motionpoints|motionedit|motionpins|motionpinsspan|hints|hintsend|camera|cameraview|bones|springbones|shapebones|shapeweights|mixedbones|layerdepth|layerdepthview|filters|strokes|prefs|licenses|zoom|recovery|plugins|actions|script|scriptproblems|testmovie|testmovieinside|testscript|textfields|testtext|richtext|softmask|pathtext|button|testhits|exporthtml|publish|publishreport|publishanim|sound|envelope|ease|easepreset|plugineases|pluginexport|pluginexportwindow|library|librarymenu|libraryfolders|colour|layerprops|frameview|layercolour|timelinepolish|dock|dockicons|floattabs|docknarrow|workspaces|animator|designer|gradient|gradientbucket|swatches|swatchpanel]\n\
+     --renderer   the window's graphics (also ANICRAFT_RENDERER); default automatic, falling back to OpenGL\n\
+     --theme      a built-in look, or a theme file of your own, for this run only\n\
+     --check-theme  says whether a theme file would be used (exit 0) or why it is refused (exit 1)\n\
      --open       shows a panel at start (handy with --screenshot for visual checks)\n\
      --shot-width scales the screenshot down to this width (the user guide's pictures)\n\
      ANICRAFT_STAGE_RENDERER=gpu|cpu  stage renderer (default gpu, falling back to cpu; ADR 0032)\n\
      --theme      the interface palette for this run (not saved)\n\
      --scale      the interface scale for this run, 75 to 200 (not saved)\n\
      --lang       the interface language for this run (not saved); pseudo tests the layout\n\
+     --control    lets an assistant edit this window live through a port on this computer\n\
+                  (also ANICRAFT_CONTROL_PORT; 9878 by convention; see docs/control-protocol.md)\n\
      Headless use: anicraft-cli --help";
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -261,25 +338,105 @@ fn main() -> eframe::Result {
             println!("{HELP}");
             return Ok(());
         }
+        Some(Print::CheckTheme(file)) => {
+            // The same checks Preferences makes, without a window: 0 when the theme would be
+            // used, 1 with the reason when it is refused.
+            match theme_file::read(&file) {
+                Ok(t) => {
+                    println!("{}: a theme AniCraft can use (base: {})", file.display(), theme_file::base_name(t.base)); // i18n-exempt: a console message
+                    for n in &t.notes {
+                        println!("  low contrast, not refused: {} is {:.2}:1 (3:1 or more reads better)", n.pair, n.ratio); // i18n-exempt: a console message
+                    }
+                    return Ok(());
+                }
+                Err(why) => {
+                    eprintln!("{}: refused. {}", file.display(), why.message()); // i18n-exempt: a console message
+                    std::process::exit(1);
+                }
+            }
+        }
         None => {}
     }
-    let Args { shot, file, open, renderer, look, .. } = args;
+    let Args { shot, file, open, renderer, look, control, .. } = args;
+    // ANICRAFT_CONTROL_PORT when there is no --control; a bad port stops here, before a window.
+    let control = match control {
+        Some(p) => Some(p),
+        None => match std::env::var(anicraft_cli::control::PORT_ENV).ok().filter(|v| !v.trim().is_empty()) {
+            Some(v) => match anicraft_cli::control::parse_port(&v) {
+                Ok(p) => Some(p),
+                Err(e) => {
+                    eprintln!("{}: {e}", anicraft_cli::control::PORT_ENV);
+                    std::process::exit(2);
+                }
+            },
+            None => None,
+        },
+    };
     // macOS hands documents over as Apple Events, the one that launched the app included: listen
     // from before the event loop starts until it ends (ADR 0062).
     let _documents = platform::listen_for_documents();
 
-    // wgpu first (Vulkan/Metal/DX12). If it cannot start (old GPU, VM, missing drivers, common
-    // on some Linux setups) retry once with OpenGL, unless the user forced a backend.
-    let forced = platform::forced_renderer(renderer.as_deref());
-    let first = forced.unwrap_or(eframe::Renderer::Wgpu);
-    match run(first, file.as_deref(), shot.clone(), open.clone(), look.clone()) {
-        Err(e) if forced.is_none() && first == eframe::Renderer::Wgpu => {
-            eprintln!("GPU backend (wgpu) failed to start: {e}. Retrying with OpenGL.");
-            run(eframe::Renderer::Glow, file.as_deref(), shot, open, look)
+    // The window: the graphics asked for, then this platform's order down to OpenGL. A way that
+    // fails or panics before the window is up falls through to the next; a start that died
+    // inside a driver last time tries that way last (#207, `startup`).
+    let mut last = startup::begin(platform::log_dir());
+    let mut file = file;
+    let mut reopened = 0;
+    let mut why = String::from("no attempt"); // i18n-exempt: log text
+    // Once, and again each time the window closed to reopen another way.
+    let mut opening = true;
+    // What the command line asks for is tried first, until a session loses its device on it.
+    let mut forced = platform::forced_backend(renderer.as_deref());
+    while opening {
+        opening = false;
+        let attempts = startup::plan(forced, prefs::Prefs::load().window_backend, &platform::window_attempts(platform::OS), &last);
+        for (n, attempt) in attempts.iter().enumerate() {
+            startup::trying(attempt, n + 1, attempts.len());
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(*attempt, file.as_deref(), shot.clone(), open.clone(), look.clone(), control)));
+            why = match result {
+                Ok(Ok(())) => {
+                    // The window's graphics device was lost mid-session (ADR 0092): it closed
+                    // with the work autosaved, to open again another way, which offers it back.
+                    if let Some(reopen) = startup::take_reopen()
+                        && reopened < MAX_REOPENS
+                    {
+                        reopened += 1;
+                        startup::line(&format!("opening the window again, {} last", attempt.label()));
+                        last.retain(|l| *l != attempt.label());
+                        last.push(attempt.label());
+                        forced = None;
+                        file = reopen;
+                        opening = true;
+                        break;
+                    }
+                    startup::line("closed");
+                    return Ok(());
+                }
+                Ok(Err(e)) => e.to_string(),
+                Err(p) => format!("{} panicked: {}", attempt.label(), startup::panic_text(p.as_ref())), // i18n-exempt: a log line
+            };
+            startup::line(&format!("{} failed: {why}", attempt.label()));
+            // It ran and then stopped: not a start-up problem, and opening a second window would
+            // surprise (autosave offers the work back next time). A graphics failure makes the
+            // next starts try this way late (ADR 0092).
+            if startup::started() {
+                if startup::is_graphics_failure(&why) {
+                    startup::lost_mid_session();
+                }
+                return Err(eframe::Error::AppCreation(why.into()));
+            }
+            // It never came up: the next starts try it last, as one that died in a driver.
+            startup::failed_to_open();
         }
-        other => other,
     }
+    startup::give_up(&why);
+    Err(eframe::Error::AppCreation(why.into()))
 }
+
+/// Times one run opens the window again after its graphics device was lost (ADR 0092); past
+/// that it closes, and the next start offers the work back.
+#[cfg(not(target_arch = "wasm32"))]
+const MAX_REOPENS: u32 = 2;
 
 #[cfg(test)]
 mod args_tests {
@@ -305,6 +462,17 @@ mod args_tests {
         assert_eq!(parse(&["--screenshot", "a.png", "--shot-width", "1200"]).look.shot_width, Some(1200));
         assert!(parse_args(["--shot-width".to_string(), "9".to_string()]).is_err());
         assert_eq!(parse(&["--version"]).print, Some(Print::Version));
+        // A theme file of the user's (ADR 0117), for a run or only to check it.
+        assert_eq!(parse(&["--theme", "themes/Plum.JSON"]).look.theme_file, Some(PathBuf::from("themes/Plum.JSON")));
+        assert_eq!(parse(&["--theme", "light"]).look.theme, Some(theme::Palette::Light));
+        assert!(parse_args(["--theme".to_string(), "plum".to_string()]).is_err());
+        assert_eq!(parse(&["--check-theme", "plum.json"]).print, Some(Print::CheckTheme(PathBuf::from("plum.json"))));
+        assert!(parse_args(["--check-theme".to_string()]).is_err());
+        // `--control <port>` (ADR 0104): a port from 1 to 65535, or an error before any window.
+        assert_eq!(parse(&["--control", "9878"]).control, Some(9878));
+        for bad in [&["--control"][..], &["--control", "0"], &["--control", "99999"], &["--control", "port"]] {
+            assert!(parse_args(bad.iter().map(|a| a.to_string())).is_err(), "{bad:?}");
+        }
         // And the file opens: the session starts with it, not the sample.
         let dir = std::env::temp_dir().join(format!("anicraft-shell-args-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -316,8 +484,15 @@ mod args_tests {
         assert_eq!(opened.path.as_deref(), Some(path.as_path()));
         assert!(opened.doc == s.doc, "the document on the command line, not the sample");
         // A file that isn't there: the sample, never a crash.
-        let (fallback, _) = open_session(Some(&dir.join("missing.anicraft")));
+        let (fallback, said) = open_session(Some(&dir.join("missing.anicraft")));
         assert!(fallback.path.is_none());
+        // #226: and the window says why (a release build has no console to print it on).
+        assert!(matches!(&said, Opened::Failed(name, why) if name == "missing.anicraft" && !why.is_empty()), "{said:?}");
+        // An Animate document double-clicked or opened with AniCraft imports, with its report.
+        let xfl = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/xfl/tests/corpus/shapes/shapes.xfl");
+        let (imported, said) = open_session(Some(&xfl));
+        assert!(matches!(said, Opened::Imported(_)), "{said:?}");
+        assert!(imported.path.is_none() && !imported.doc.timeline(0).layers.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
@@ -327,6 +502,20 @@ mod guide_reference_tests;
 #[cfg(test)]
 mod guidelines_tests;
 #[cfg(test)]
+mod dock_narrow_tests;
+#[cfg(test)]
 mod architecture_tests;
 #[cfg(test)]
 mod packaging_tests;
+#[cfg(test)]
+mod rulers_tests;
+#[cfg(test)]
+mod retime_ui_tests;
+#[cfg(test)]
+mod layer_ui_tests;
+#[cfg(test)]
+mod parenting_ui_tests;
+#[cfg(test)]
+mod tilt_ui_tests;
+#[cfg(test)]
+mod zoom_tests;

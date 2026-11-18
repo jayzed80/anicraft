@@ -6,7 +6,7 @@
 
 use crate::a11y::{self, Named};
 use crate::app::App;
-use crate::theme::{T, TARGET, Type, color, color_edit_button_srgb, font, text};
+use crate::theme::{T, TARGET, Type, color, font, text};
 use anicraft_engine::StateId;
 use anicraft_engine::find::{self, Field, Hit, Kind, Query, TextOptions, Where};
 use egui::{Align2, Rect, Sense, WidgetType, pos2, vec2};
@@ -243,7 +243,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     }
     let mut open = app.find.open;
     let at = ctx.content_rect().right_top() + vec2(-720.0, 110.0);
-    let shown = egui::Window::new(tr!("Find and Replace")).id(egui::Id::new("find_replace")).open(&mut open).default_pos(at).default_width(400.0).resizable(true).collapsible(false).show(ctx, |ui| panel(app, ui));
+    let shown = crate::windows::new(ctx, tr!("Find and Replace")).id(egui::Id::new("find_replace")).open(&mut open).default_pos(at).default_width(400.0).resizable(true).collapsible(false).show(ctx, |ui| panel(app, ui));
     a11y::name_title_bar(&shown, tr!("Find and Replace"));
     app.find.open = open;
 }
@@ -285,11 +285,11 @@ fn query_rows(app: &mut App, ui: &mut egui::Ui) -> bool {
         }
         Kind::Color => {
             row(ui, tr!("Find"), &mut |ui| {
-                color_edit_button_srgb(ui, &mut app.find.color).named(tr!("Colour to find"));
+                crate::colour::button(ui, &mut app.find.color).named(tr!("Colour to find"));
                 ui.label(text(Type::Data, format!("#{:02x}{:02x}{:02x}", app.find.color[0], app.find.color[1], app.find.color[2])));
             });
             row(ui, tr!("Replace with"), &mut |ui| {
-                color_edit_button_srgb(ui, &mut app.find.with_color).named(tr!("Colour to replace with"));
+                crate::colour::button(ui, &mut app.find.with_color).named(tr!("Colour to replace with"));
                 ui.label(text(Type::Data, format!("#{:02x}{:02x}{:02x}", app.find.with_color[0], app.find.with_color[1], app.find.with_color[2])));
             });
         }
@@ -477,7 +477,7 @@ fn results_list(app: &mut App, ui: &mut egui::Ui, list: &[Hit]) {
                 p.rect_filled(r, T.rc(), if on { T.accent_dim } else { T.hover });
             }
             if on {
-                p.rect_filled(Rect::from_min_size(r.left_top(), vec2(3.0, r.height())), 0.0, T.accent);
+                crate::theme::accent_bar(p, Rect::from_min_size(r.left_top(), vec2(3.0, r.height())));
             }
             // What was found (the text around a match), then where.
             let what = match kind {

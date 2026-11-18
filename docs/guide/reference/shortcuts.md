@@ -1,6 +1,6 @@
 # Shortcut reference
 
-AniCraft's default keyboard shortcuts. On macOS, **Ctrl** is **⌘** (Command) and **Alt** is **⌥** (Option). To change a shortcut, open **Help › Keyboard Shortcuts** (**F1**): see [Preferences, shortcuts, accessibility and languages](../preferences-shortcuts-accessibility.md). The keys in the fixed rows can't be reassigned. Every command, with or without a key, is in the [command reference](commands.md).
+AniCraft's default keyboard shortcuts. On macOS, **Ctrl** is **⌘** (Command) and **Alt** is **⌥** (Option). To change a shortcut, open **Help › Keyboard Shortcuts** (**Ctrl+Alt+Shift+K**): see [Preferences, shortcuts, accessibility and languages](../preferences-shortcuts-accessibility.md). The keys in the fixed rows can't be reassigned. Every command, with or without a key, is in the [command reference](commands.md).
 
 This page is generated from the editor's shortcut map, so it always matches the version of AniCraft it came with.
 
@@ -9,7 +9,8 @@ This page is generated from the editor's shortcut map, so it always matches the 
 | Action | Windows and Linux | macOS |
 |---|---|---|
 | Command palette | Ctrl+K | ⌘K |
-| Keyboard shortcuts (this editor) | F1, Ctrl+Alt+Shift+K | F1, ⌥⇧⌘K |
+| Help for what you are pointing at | F1 | F1 |
+| Keyboard shortcuts (this editor) | Ctrl+Alt+Shift+K | ⌥⇧⌘K |
 | Play / Stop | Enter | ↩ |
 | Preferences | Ctrl+U, Ctrl+, | ⌘U, ⌘, |
 | Exit (Quit on macOS) | Ctrl+Q | ⌘Q |
@@ -21,8 +22,11 @@ This page is generated from the editor's shortcut map, so it always matches the 
 | Selection | V | V |
 | Subselection | A | A |
 | Free Transform | Q | Q |
+| Asset Warp | Shift+Q | ⇧Q |
+| Gradient Transform | F | F |
 | Width | U | U |
 | Bone | M | M |
+| Bind | Shift+M | ⇧M |
 | Pen | P | P |
 | Text | T | T |
 | Pencil | Shift+Y | ⇧Y |
@@ -76,6 +80,14 @@ This page is generated from the editor's shortcut map, so it always matches the 
 | Action | Windows and Linux | macOS |
 |---|---|---|
 | Snapping › Snap to Objects | Ctrl+Shift+/, Ctrl+Shift+? | ⇧⌘/, ⇧⌘? |
+| Rulers | Ctrl+Alt+Shift+R | ⌥⇧⌘R |
+| Grid › Show Grid | Ctrl+' | ⌘' |
+| Grid › Snap to Grid | Ctrl+Shift+' | ⇧⌘' |
+| Grid › Edit Grid… | Ctrl+Alt+G | ⌥⌘G |
+| Guides › Show Guides | Ctrl+; | ⌘; |
+| Guides › Lock Guides | Ctrl+Alt+; | ⌥⌘; |
+| Guides › Snap to Guides | Ctrl+Shift+; | ⇧⌘; |
+| Guides › Edit Guides… | Ctrl+Alt+Shift+G | ⌥⇧⌘G |
 | Fit Stage in Window | Ctrl+2 | ⌘2 |
 | Onion Skin On / Off | Alt+Shift+O | ⌥⇧O |
 | Select All Frames | Ctrl+Alt+A | ⌥⌘A |
@@ -86,6 +98,10 @@ This page is generated from the editor's shortcut map, so it always matches the 
 | Find Next | F3 | F3 |
 | Find Previous | Shift+F3 | ⇧F3 |
 | Movie Explorer | Alt+F3 | ⌥F3 |
+| Close Document | Ctrl+W | ⌘W |
+| Close All Documents | Ctrl+Alt+W | ⌥⌘W |
+| Next Document | Ctrl+PageDown | ⌘PageDown |
+| Previous Document | Ctrl+PageUp | ⌘PageUp |
 | Brush Size Down | \[ | \[ |
 | Brush Size Up | \] | \] |
 | Zoom in / out | Ctrl+=, Ctrl+- | ⌘=, ⌘- |
@@ -115,6 +131,8 @@ This page is generated from the editor's shortcut map, so it always matches the 
 | Arrange › Send to Back | Ctrl+Shift+Down | ⇧⌘↓ |
 | Convert to Symbol… | F8 | F8 |
 | Break Apart | Ctrl+B | ⌘B |
+| Group | Ctrl+G | ⌘G |
+| Ungroup | Ctrl+Shift+G | ⇧⌘G |
 | Transform › Rotate 90° CW | Ctrl+Shift+9 | ⇧⌘9 |
 | Transform › Rotate 90° CCW | Ctrl+Shift+7 | ⇧⌘7 |
 | Transform › Remove Transform | Ctrl+Shift+Z | ⇧⌘Z |

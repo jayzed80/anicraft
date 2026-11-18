@@ -2,11 +2,11 @@
 //!
 //! Lucide icons are 24 × 24 outlines made of a few SVG shapes. Rather than pull in an SVG
 //! rasterizer, the shapes are parsed once with the engine's own SVG path reader
-//! (`geom::svg`) and stroked as vectors at the exact on-screen size, so they stay crisp at any
+//! (`anicraft_svg::parse_path_data`, on craft-svg) and stroked as vectors at the exact on-screen size, so they stay crisp at any
 //! interface scale and cost nothing in build size. Only icons the app uses are embedded; add a
 //! file to `assets/icons/` and a variant here to use another.
 
-use anicraft_engine::geom::svg::parse_path_data;
+use anicraft_engine::svg::parse_path_data;
 use anicraft_engine::geom::{Affine, Path, Vec2};
 use egui::{Color32, Pos2, Rect, Stroke, pos2};
 use std::collections::HashMap;
@@ -63,25 +63,63 @@ pub enum Icon {
     Image,
     Type,
     Width,
+    GradientTransform,
     Sound,
     SoundOff,
     Camera,
     Magnet,
     Bone,
+    Bind,
+    Warp,
     EditMultiple,
     Layer,
+    Parent,
+    InsertFrame,
+    InsertKeyframe,
+    InsertBlankKeyframe,
+    ClipStage,
+    Plus,
+    Trash,
+    Copy,
+    Ellipsis,
+    PanelProperties,
+    PanelSwatches,
+    PanelLibrary,
+    PanelExplorer,
+    PanelHistory,
+    PanelOutput,
+    PanelActions,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub const ALL: [Icon; 56] = [
+    pub const ALL: [Icon; 75] = [
+        Icon::PanelProperties,
+        Icon::PanelSwatches,
+        Icon::PanelLibrary,
+        Icon::PanelExplorer,
+        Icon::PanelHistory,
+        Icon::PanelOutput,
+        Icon::PanelActions,
+        Icon::Warp,
+        Icon::Plus,
+        Icon::Trash,
+        Icon::Copy,
+        Icon::Ellipsis,
+        Icon::ClipStage,
+        Icon::InsertFrame,
+        Icon::InsertKeyframe,
+        Icon::InsertBlankKeyframe,
+        Icon::Bind,
         Icon::Layer,
+        Icon::Parent,
         Icon::EditMultiple,
         Icon::Bone,
         Icon::Magnet,
         Icon::SoundOff,
         Icon::Camera,
         Icon::Width,
+        Icon::GradientTransform,
         Icon::Sound,
         Icon::Guide,
         Icon::Image,
@@ -136,7 +174,7 @@ impl Icon {
     /// Drawn filled as well as outlined: the Selection arrow is solid, the Subselection arrow
     /// hollow, the way animators tell the two apart at a glance.
     fn solid(self) -> bool {
-        matches!(self, Icon::Select)
+        matches!(self, Icon::Select | Icon::InsertKeyframe | Icon::Ellipsis)
     }
 
     /// Lucide icon file and whether it is drawn mirrored.
@@ -148,6 +186,8 @@ impl Icon {
             Icon::Transform => ("scaling", false),
             // A stroke swelling and tapering, with a width point across it (AniCraft original).
             Icon::Width => ("anicraft-width", false),
+            // A box of gradient bands with a turning knob on its corner (AniCraft original).
+            Icon::GradientTransform => ("anicraft-gradient-transform", false),
             Icon::Pen => ("pen-tool", false),
             Icon::Pencil => ("pencil", false),
             // A round brush: handle, ferrule and a painted tip (AniCraft original, on Lucide's grid).
@@ -209,12 +249,43 @@ impl Icon {
             Icon::Magnet => ("anicraft-magnet", false),
             // A bone: a wedge from its joint to its end (AniCraft original, on Lucide's grid).
             Icon::Bone => ("anicraft-bone", false),
+            // A bone whose end is tied to two points (AniCraft original, on Lucide's grid): Bind.
+            Icon::Bind => ("anicraft-bind", false),
+            // A mesh bent around a pin (AniCraft original, on Lucide's grid): Asset Warp.
+            Icon::Warp => ("anicraft-warp", false),
             // Frames stacked one behind the other, all edited at once (AniCraft original, on
             // Lucide's grid): Edit Multiple Frames.
             Icon::EditMultiple => ("anicraft-edit-multiple", false),
             Icon::FolderOpen => ("folder-open", false),
             // A layer: a row with a keyframe and its span (AniCraft original, on Lucide's grid).
             Icon::Layer => ("anicraft-layer", false),
+            // A layer's dot joined to the layers that follow it (AniCraft original, on Lucide's
+            // grid): the timeline's parenting view (ADR 0113).
+            Icon::Parent => ("anicraft-parent", false),
+            // Insert Frame / Keyframe / Blank Keyframe: the timeline's own marks (a frame cell, a
+            // filled keyframe dot, a hollow blank-keyframe dot), each with a plus (AniCraft
+            // originals, on Lucide's grid).
+            Icon::InsertFrame => ("anicraft-insert-frame", false),
+            Icon::InsertKeyframe => ("anicraft-insert-keyframe", false),
+            Icon::InsertBlankKeyframe => ("anicraft-insert-blank-keyframe", false),
+            // The stage with crop marks at its corners (AniCraft original, on Lucide's grid):
+            // Clip Content Outside the Stage.
+            Icon::ClipStage => ("anicraft-clip-stage", false),
+            // New layer, Delete, Duplicate and a panel's options menu.
+            Icon::Plus => ("plus", false),
+            Icon::Trash => ("trash", false),
+            Icon::Copy => ("copy", false),
+            Icon::Ellipsis => ("ellipsis", false),
+            // The panels, as icons in a dock collapsed to icons (ADR 0087; AniCraft originals,
+            // on Lucide's grid): sliders, swatches, books, a tree, a clock turning back, a
+            // console, code.
+            Icon::PanelProperties => ("anicraft-panel-properties", false),
+            Icon::PanelSwatches => ("anicraft-panel-swatches", false),
+            Icon::PanelLibrary => ("anicraft-panel-library", false),
+            Icon::PanelExplorer => ("anicraft-panel-explorer", false),
+            Icon::PanelHistory => ("anicraft-panel-history", false),
+            Icon::PanelOutput => ("anicraft-panel-output", false),
+            Icon::PanelActions => ("anicraft-panel-actions", false),
         }
     }
 }
@@ -263,17 +334,36 @@ static FILES: &[(&str, &str)] = &[
     ("anicraft-distribute-v", include_str!("../assets/icons/anicraft-distribute-v.svg")),
     ("anicraft-mask", include_str!("../assets/icons/anicraft-mask.svg")),
     ("anicraft-width", include_str!("../assets/icons/anicraft-width.svg")),
+    ("anicraft-gradient-transform", include_str!("../assets/icons/anicraft-gradient-transform.svg")),
     ("anicraft-brush", include_str!("../assets/icons/anicraft-brush.svg")),
     ("anicraft-eraser", include_str!("../assets/icons/anicraft-eraser.svg")),
     ("anicraft-paint-brush", include_str!("../assets/icons/anicraft-paint-brush.svg")),
     ("anicraft-eyedropper", include_str!("../assets/icons/anicraft-eyedropper.svg")),
     ("anicraft-masked", include_str!("../assets/icons/anicraft-masked.svg")),
     ("anicraft-layer", include_str!("../assets/icons/anicraft-layer.svg")),
+    ("anicraft-insert-frame", include_str!("../assets/icons/anicraft-insert-frame.svg")),
+    ("anicraft-insert-keyframe", include_str!("../assets/icons/anicraft-insert-keyframe.svg")),
+    ("anicraft-insert-blank-keyframe", include_str!("../assets/icons/anicraft-insert-blank-keyframe.svg")),
+    ("anicraft-clip-stage", include_str!("../assets/icons/anicraft-clip-stage.svg")),
     ("anicraft-camera", include_str!("../assets/icons/anicraft-camera.svg")),
     ("anicraft-bone", include_str!("../assets/icons/anicraft-bone.svg")),
+    ("anicraft-bind", include_str!("../assets/icons/anicraft-bind.svg")),
+    ("anicraft-parent", include_str!("../assets/icons/anicraft-parent.svg")),
+    ("anicraft-warp", include_str!("../assets/icons/anicraft-warp.svg")),
     ("anicraft-edit-multiple", include_str!("../assets/icons/anicraft-edit-multiple.svg")),
     ("folder", include_str!("../assets/icons/folder.svg")),
     ("folder-open", include_str!("../assets/icons/folder-open.svg")),
+    ("plus", include_str!("../assets/icons/plus.svg")),
+    ("trash", include_str!("../assets/icons/trash.svg")),
+    ("copy", include_str!("../assets/icons/copy.svg")),
+    ("ellipsis", include_str!("../assets/icons/ellipsis.svg")),
+    ("anicraft-panel-properties", include_str!("../assets/icons/anicraft-panel-properties.svg")),
+    ("anicraft-panel-swatches", include_str!("../assets/icons/anicraft-panel-swatches.svg")),
+    ("anicraft-panel-library", include_str!("../assets/icons/anicraft-panel-library.svg")),
+    ("anicraft-panel-explorer", include_str!("../assets/icons/anicraft-panel-explorer.svg")),
+    ("anicraft-panel-history", include_str!("../assets/icons/anicraft-panel-history.svg")),
+    ("anicraft-panel-output", include_str!("../assets/icons/anicraft-panel-output.svg")),
+    ("anicraft-panel-actions", include_str!("../assets/icons/anicraft-panel-actions.svg")),
 ];
 
 /// The value of attribute `name` in an element's tag text.
@@ -355,12 +445,15 @@ pub fn paint(p: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
     let w = ((1.75 * s * ppp).round().max(1.0)) / ppp;
     let stroke = Stroke::new(w, color);
     let solid = icon.solid();
+    let tint = accent_fill(color);
     for path in paths {
         for pl in path.flatten(&m, 0.08) {
             let pts: Vec<Pos2> = pl.points.iter().map(|q| pos2(q.x, q.y)).collect();
             if pl.closed {
                 if solid {
                     fill_polygon(p, &pts, color);
+                } else if let Some(tint) = tint {
+                    fill_polygon(p, &pts, tint);
                 }
                 p.add(egui::Shape::closed_line(pts, stroke));
             } else {
@@ -372,6 +465,15 @@ pub fn paint(p: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
             }
         }
     }
+}
+
+/// The tint inside an icon's closed shapes (ADR 0117), when the palette has one (`icon_accent`)
+/// and the icon is drawn in one of the icon roles: at rest, under the pointer, or on the active
+/// tool's block. Icons drawn as text marks (chevrons, a disabled button) stay outlines. The
+/// built-in palettes have no tint, so they draw exactly as before.
+fn accent_fill(color: Color32) -> Option<Color32> {
+    let t = &*crate::theme::T;
+    (t.icon_accent.a() > 0 && [t.icon, t.icon_hot, t.on_active].contains(&color)).then_some(t.icon_accent)
 }
 
 /// Fills a simple (possibly concave) polygon by ear clipping. Icon outlines have a few dozen
@@ -478,6 +580,38 @@ mod tests {
         let outline = library().get(name).unwrap()[0].flatten(&Affine::IDENTITY, 0.08);
         let pts: Vec<Pos2> = outline[0].points.iter().map(|q| pos2(q.x, q.y)).collect();
         assert!(!triangulate(&pts).1.is_empty());
+    }
+
+    #[test]
+    fn icons_are_tinted_only_by_a_palette_that_has_a_tint() {
+        use crate::theme::{GRAPHITE, Palette, T};
+        let ctx = egui::Context::default();
+        let shapes = |ctx: &egui::Context, color: Color32| {
+            let mut n = 0;
+            let mut out = ctx.run_ui(Default::default(), |ui| {
+                let p = ui.painter().clone();
+                let before = p.add(egui::Shape::Noop).0;
+                paint(&p, Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(24.0, 24.0)), Icon::Lock, color);
+                n = p.add(egui::Shape::Noop).0 - before;
+            });
+            out.textures_delta.clear();
+            n
+        };
+        // The built-in palettes: outlines only, the same shapes whatever the colour.
+        crate::theme::apply_palette(&ctx, Palette::Graphite);
+        assert_eq!(accent_fill(T.icon), None);
+        let plain = shapes(&ctx, T.icon);
+        // A theme with a tint: closed shapes gain a fill under icons in the icon roles only.
+        let mut tinted = GRAPHITE;
+        tinted.set_colour("icon_accent", T.accent.gamma_multiply(0.4));
+        crate::theme::apply_user_theme(&ctx, Palette::Graphite, tinted);
+        assert_eq!(accent_fill(T.icon), Some(tinted.icon_accent));
+        assert_eq!(accent_fill(T.on_active), Some(tinted.icon_accent));
+        assert_eq!(accent_fill(T.text_faint), None, "a disabled icon stays an outline");
+        assert!(shapes(&ctx, T.icon) > plain, "the lock's body is filled");
+        assert_eq!(shapes(&ctx, T.text_faint), plain);
+        crate::theme::apply_palette(&ctx, Palette::Graphite);
+        assert_eq!(shapes(&ctx, T.icon), plain);
     }
 
     #[test]

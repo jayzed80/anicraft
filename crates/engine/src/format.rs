@@ -3,90 +3,78 @@
 use crate::EngineError;
 use anicraft_doc::{Document, path_table};
 use anicraft_geom::Path;
+use craft_anicraft_format::PayloadDecoder;
+pub use craft_anicraft_format::{FORMAT_NAME, MAX_FILE_BYTES};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-pub const FORMAT_NAME: &str = "anicraft";
-/// v1: inline tagged paths. v2: SVG path strings, shared paths stored once in `paths`.
-/// v3: `scenes` (a list of named timelines) instead of one `timeline`; v1/v2 files load as one
-/// scene.
-pub const FORMAT_VERSION: u32 = 3;
-/// Largest file we will parse.
-pub const MAX_FILE_BYTES: u64 = 1024 * 1024 * 1024;
-/// Files smaller than this (compact) are pretty-printed for humans and diffs.
-const PRETTY_LIMIT: usize = 1024 * 1024;
+/// The newest envelope version this build reads (v1 inline paths; v2 shared path table; v3
+/// named scene timelines; v4 mixed armatures, ADR 0098).
+pub const FORMAT_VERSION: u32 = 4;
+/// The version a document is written as unless it needs a later one: the shared envelope's.
+/// Builds from before ADR 0098 read up to this.
+pub const BASE_VERSION: u32 = craft_anicraft_format::FORMAT_VERSION;
+/// The first version that may hold mixed armatures.
+pub const MIXED_ARMATURES_VERSION: u32 = 4;
 
-/// Written in this field order: the path table precedes the document, so a reader can stream
-/// the file in one pass with references already resolvable.
+/// The version `doc` is written as: the lowest that can say everything in it, so a document
+/// that uses nothing new still opens in earlier builds, and one that does is refused by them
+/// with a message naming the version instead of opening with parts missing.
+pub fn version_for(doc: &Document) -> u32 {
+    if doc.has_mixed_armatures() { MIXED_ARMATURES_VERSION } else { BASE_VERSION }
+}
+
+/// The envelope for versions past the shared crate's own: the same fields in the same order,
+/// and the same compact-or-pretty rule, with the version the document needs.
 #[derive(Serialize)]
 struct EnvelopeOut<'a> {
     format: &'a str,
     version: u32,
-    generator: String,
+    generator: &'a str,
     paths: &'a [Arc<Path>],
     document: &'a Document,
 }
 
-/// Streaming reader: when `paths` arrives it opens a path-table scope for `document`.
-struct EnvelopeIn {
-    format: String,
-    version: u32,
-    document: Option<Document>,
+fn write_as(version: u32, generator: &str, paths: &[Arc<Path>], doc: &Document) -> Result<String, serde_json::Error> {
+    if version <= BASE_VERSION {
+        return craft_anicraft_format::write(generator, paths, doc);
+    }
+    let envelope = EnvelopeOut { format: FORMAT_NAME, version, generator, paths, document: doc };
+    let compact = serde_json::to_string(&envelope)?;
+    if compact.len() < craft_anicraft_format::PRETTY_LIMIT { serde_json::to_string_pretty(&envelope) } else { Ok(compact) }
 }
 
-impl<'de> Deserialize<'de> for EnvelopeIn {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        struct V;
-        impl<'de> serde::de::Visitor<'de> for V {
-            type Value = EnvelopeIn;
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("an .anicraft envelope object")
-            }
-            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<EnvelopeIn, A::Error> {
-                let (mut format, mut version, mut document) = (None, None, None);
-                let mut _scope = None;
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "format" => format = Some(map.next_value::<String>()?),
-                        "version" => version = Some(map.next_value::<u32>()?),
-                        "paths" => {
-                            let paths: Vec<Path> = map.next_value()?;
-                            _scope = Some(path_table::begin_read(paths.into_iter().map(Arc::new).collect()));
-                        }
-                        "document" => document = Some(map.next_value::<Document>()?),
-                        _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
-                        }
-                    }
-                }
-                Ok(EnvelopeIn {
-                    format: format.ok_or_else(|| serde::de::Error::missing_field("format"))?,
-                    version: version.ok_or_else(|| serde::de::Error::missing_field("version"))?,
-                    document,
-                })
-            }
-        }
-        d.deserialize_map(V)
+/// AniCraft document deserialization uses its own path-table scope while the shared format crate
+/// controls when a payload is decoded in the envelope stream.
+struct DocumentDecoder;
+
+impl PayloadDecoder<Arc<Path>> for DocumentDecoder {
+    type Document = Document;
+
+    fn decode<'de, D>(&mut self, deserializer: D, paths: Option<Vec<Arc<Path>>>) -> Result<Self::Document, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let _scope = paths.map(path_table::begin_read);
+        Document::deserialize(deserializer)
     }
 }
 
 pub fn to_json(doc: &Document) -> Result<String, EngineError> {
     let paths = path_table::build_table(doc);
-    let env = EnvelopeOut { format: FORMAT_NAME, version: FORMAT_VERSION, generator: format!("AniCraft {}", env!("CARGO_PKG_VERSION")), paths: &paths, document: doc };
-    let compact = path_table::write_with_paths(&paths, || serde_json::to_string(&env)).map_err(|e| EngineError::Format(e.to_string()))?;
-    if compact.len() < PRETTY_LIMIT {
-        return path_table::write_with_paths(&paths, || serde_json::to_string_pretty(&env)).map_err(|e| EngineError::Format(e.to_string()));
-    }
-    Ok(compact)
+    let generator = format!("AniCraft {}", env!("CARGO_PKG_VERSION"));
+    let version = version_for(doc);
+    path_table::write_with_paths(&paths, || write_as(version, &generator, &paths, doc)).map_err(|e| EngineError::Format(e.to_string()))
 }
 
 pub fn from_json(text: &str) -> Result<Document, EngineError> {
-    let env: EnvelopeIn = serde_json::from_str(text).map_err(|e| EngineError::Format(format!("not a valid .anicraft file: {e}")))?;
+    let env = craft_anicraft_format::read::<Arc<Path>, _>(text, &mut DocumentDecoder)
+        .map_err(|e| EngineError::Format(format!("not a valid .anicraft file: {e}")))?;
     if env.format != FORMAT_NAME {
         return Err(EngineError::Format(format!("unexpected format '{}'", env.format)));
     }
     if env.version > FORMAT_VERSION {
-        return Err(EngineError::Format(format!("file version {} is newer than this AniCraft (supports {FORMAT_VERSION})", env.version)));
+        return Err(EngineError::Format(format!("file version {} is newer than this AniCraft (supports {FORMAT_VERSION}): open it with the AniCraft that saved it, or a newer one", env.version)));
     }
     let mut doc = env.document.ok_or_else(|| EngineError::Format("the file has no document".into()))?;
     doc.sanitize();
@@ -104,9 +92,13 @@ pub fn load(path: &std::path::Path) -> Result<Document, EngineError> {
 pub fn save(doc: &Document, path: &std::path::Path) -> Result<(), EngineError> {
     let json = to_json(doc)?;
     // Write next to the target, then rename: a crash mid-write never corrupts the old file.
-    let tmp = path.with_extension("anicraft.tmp");
-    crate::vfs::write(&tmp, json)?;
-    crate::vfs::rename(&tmp, path)?;
+    // The temp name is unguessable and created exclusively, so a planted file or symlink can't redirect the write.
+    let tmp = path.with_extension(format!("anicraft.{}.tmp", crate::vfs::random_suffix()));
+    crate::vfs::write_new(&tmp, json)?;
+    if let Err(e) = crate::vfs::rename(&tmp, path) {
+        let _ = crate::vfs::remove_file(&tmp);
+        return Err(e.into());
+    }
     Ok(())
 }
 
@@ -132,8 +124,46 @@ mod tests {
         let back = from_json(&json).unwrap();
         assert_eq!(d, back);
         let l = &back.timeline(0).layers[0];
-        let (anicraft_doc::ElementKind::Shape(a), anicraft_doc::ElementKind::Shape(b)) = (&l.keyframes[0].elements[0].kind, &l.keyframes[3].elements[0].kind) else { panic!() };
+        let (anicraft_doc::ElementKind::Shape(a), anicraft_doc::ElementKind::Shape(b)) =
+            (&l.keyframes[0].elements[0].kind, &l.keyframes[3].elements[0].kind)
+        else {
+            panic!()
+        };
         assert!(Arc::ptr_eq(&a.path, &b.path), "sharing restored on load");
+    }
+
+    #[test]
+    fn duplicate_envelope_keys_keep_last_values_and_path_table_scope() {
+        let doc = sample::stress(2, 40, 48);
+        let wire: serde_json::Value = serde_json::from_str(&to_json(&doc).unwrap()).unwrap();
+        let paths = wire["paths"].as_array().unwrap();
+        let mut earlier_paths = paths.clone();
+        earlier_paths.reverse();
+        assert_ne!(earlier_paths.as_slice(), paths.as_slice());
+        let json = format!(
+            "{{\"format\":\"other\",\"format\":\"anicraft\",\"version\":99,\"version\":3,\"paths\":{},\"paths\":{},\"document\":{},\"ignored\":true}}",
+            serde_json::to_string(&earlier_paths).unwrap(),
+            serde_json::to_string(paths).unwrap(),
+            serde_json::to_string(&wire["document"]).unwrap(),
+        );
+        assert_eq!(from_json(&json).unwrap(), doc);
+    }
+
+    #[test]
+    fn malformed_earlier_duplicate_document_keeps_error_precedence_and_location() {
+        let doc = sample::demo();
+        let wire: serde_json::Value = serde_json::from_str(&to_json(&doc).unwrap()).unwrap();
+        let later_document = serde_json::to_string(&wire["document"]).unwrap();
+        let json = format!("{{\n  \"format\":\"anicraft\",\n  \"version\":3,\n  \"document\":null,\n  \"document\":{later_document}\n}}");
+        let error = from_json(&json).err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(error.contains("not a valid .anicraft file: invalid type: null"), "{error}");
+        assert!(error.contains("line 4"), "payload diagnostics keep source locations: {error}");
+    }
+
+    #[test]
+    fn absent_document_keeps_the_native_format_error() {
+        let error = from_json(r#"{"format":"anicraft","version":3}"#).err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(error.contains("the file has no document"), "{error}");
     }
 
     #[test]
@@ -162,7 +192,10 @@ mod tests {
 
     #[test]
     fn missing_fields_default() {
-        let d = from_json(r#"{"format":"anicraft","version":1,"document":{"stage":{"width":0,"height":50,"fps":-3,"background":{"r":2,"g":0,"b":0,"a":1}}}}"#).unwrap();
+        let d = from_json(
+            r#"{"format":"anicraft","version":1,"document":{"stage":{"width":0,"height":50,"fps":-3,"background":{"r":2,"g":0,"b":0,"a":1}}}}"#,
+        )
+        .unwrap();
         assert_eq!(d.stage.width, 1);
         assert_eq!(d.stage.fps, 24.0);
         assert_eq!(d.stage.background.r, 1.0);

@@ -29,6 +29,22 @@ accepts `webpki-root-certs` 1.0.12 under CDLA-Permissive-2.0 for Mozilla certifi
 in by the HTTPS verifier. It applies only to that data crate and version; the code licence
 allowlist is unchanged.
 
+**Shared-library exceptions (approved by the project lead, 2026-11-17).** The move to the shared
+Craft crates brought two licences the allowlist doesn't name. Both are accepted as crate-scoped
+exceptions in `deny.toml`, and the allowlist itself is unchanged:
+
+* `symphonia` 0.6 and its sub-crates, **MPL-2.0**, through `craft-audio` (sound decoding).
+  MPL-2.0 is file-level copyleft: AniCraft uses the files unmodified, names them in
+  `ATTRIBUTION.md` with a link to their source, and keeps its own code under MIT OR Apache-2.0.
+  Modifying a symphonia file would make that file's changes MPL-2.0.
+* `jpeg-encoder` 0.6, **(MIT OR Apache-2.0) AND IJG**, through `craft-image-codecs` (JPEG
+  export). The IJG licence asks for an acknowledgement, which is in `NOTICE`.
+
+`symphonia-codec-aac` is an AAC decoder, and AAC is a patent-pool codec (section 4). Whether the
+shared libraries make it opt-in, and whether they move to their own permissive decoders, is
+tracked with that team in storytold/craft-libs#2100. CI runs `cargo deny check licenses bans
+sources` in its own job again (the shared gate doesn't).
+
 ```sh
 cargo deny check licenses bans sources   # policy in deny.toml; must pass before every commit
 cargo deny check advisories              # RustSec security advisories (needs network)
@@ -55,6 +71,13 @@ cargo deny check advisories              # RustSec security advisories (needs ne
   user's own files: AniCraft ships none in the binary; the sample plug-ins are source under
   `examples/plugins` (MIT OR Apache-2.0).
 
+### Pictures from the system clipboard (2026-11-17, ADR 0108)
+
+Paste reads a picture copied in another app through `arboard` (MIT OR Apache-2.0), with its
+`image-data` feature. eframe already depends on that crate with that feature for text, so it
+was in `Cargo.lock` and in the inventory; it is now also a direct dependency of the desktop
+app. No crate was added to the build, and the web build does not use it.
+
 ### Opening documents on macOS (2026-11-11, ADR 0062)
 
 New crate, from crates.io, macOS builds only: `fmv-macos-events` 0.1.0 (MIT OR Apache-2.0),
@@ -77,6 +100,13 @@ off (no command-line binary). It turns the user guide's Markdown into the bundle
 guide's screenshots are original work (ATTRIBUTION.md). The guide names Adobe and Animate only
 nominatively, with the non-affiliation line on every page. No new licence.
 
+### Stroke outlines (2026-11-17, ADR 0110)
+
+New crates, from crates.io: `i_overlay` 9.2 (MIT OR Apache-2.0) with its `i_float`, `i_shape`,
+`i_tree` and `i_key_sort` (MIT), built with no default features (no rayon, no serde). They
+unite a stroke's outline on an integer grid so the renderers cover each pixel of it once. Pure
+Rust, no build script. No new licence.
+
 ### Find and Replace (2026-11-11, ADR 0058)
 
 New crates, from crates.io: `regex` 1 with `regex-syntax` and `regex-automata` (MIT OR
@@ -87,7 +117,8 @@ time with size limits. No new licence.
 ### System contrast setting (2026-11-11, ADR 0064)
 
 New direct dependency on Windows only: `winreg` 0.55 (MIT, crates.io), already in the tree
-through `craft-update`. It reads one registry value, the high-contrast flag. The web build
+through `craft-update`. It reads one registry value, the high-contrast flag (and, since ADR 0077,
+`AppsUseLightTheme` for the system's light or dark mode, with `prefers-color-scheme` on the web). The web build
 turns on web-sys's `MediaQueryList` feature (same crate, same licence). macOS and Linux ask
 system tools (`defaults`, `gdbus`, `gsettings`), so nothing is linked. No new licence.
 
@@ -140,7 +171,13 @@ Apache-2.0) with `ogg` (BSD-3-Clause), `nanomp3` and `nanomp3-core` (MP3 decodin
 Apache-2.0), and in the desktop app `cpal` (sound output, Apache-2.0) with its platform crates
 (`windows` on Windows, `alsa`/`alsa-sys` on Linux and the BSDs, MIT OR Apache-2.0; CoreAudio
 bindings on macOS). No new licence. `symphonia`, the usual Rust decoder, is MPL-2.0 and was not
-used.
+used then; it came in later through the shared `craft-audio` crate (see the shared-library
+exceptions above).
+
+Sound output in the browser (2026-11-13, ADR 0095) uses the same `cpal` with its `wasm-bindgen`
+feature (Web Audio), which brings only crates already in the web build or under MIT OR
+Apache-2.0 (`wasm-bindgen`, `js-sys`, `web-sys`, `futures-channel`, `futures-util`). No new
+licence.
 
 ### Installers (2026-11-09, ADR 0026)
 
@@ -235,4 +272,5 @@ No new crate. The installers are built with tools that are not Rust dependencies
 | "AniCraft" trademark clearance | Settled by the project lead (2026-11-09): the name is kept |
 | Freedom-to-operate patent search for core animation features | Open (recommended before 1.0) |
 | Full licence-text bundle generation (`cargo about`) in the release pipeline | Open (M8; the installers ship `LICENSE-*`, `NOTICE`, `ATTRIBUTION.md` and the font OFLs today) |
+| MPL-2.0 `symphonia` (incl. an AAC decoder) and IJG `jpeg-encoder` through the shared crates | Accepted as exceptions by the project lead (2026-11-17); opt-in AAC and permissive decoders raised in storytold/craft-libs#2100; counsel to confirm the AAC decoder |
 | WiX's MS-RL parts inside the MSI (WixUI, `Wix4UtilCA`) and the AppImage runtime's LGPL libfuse3 | Open: family-wide practice, counsel to confirm (ADR 0026) |

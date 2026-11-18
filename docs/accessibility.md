@@ -17,6 +17,11 @@ frames, the keyboard menu bar, the system's contrast setting); the rules for con
   is Stage → Timeline → Properties → Library → Tools. The status bar says where you landed, and
   a screen reader reads the panel's name. Both keys can be changed in the shortcut sheet
   (View › Next Panel, Previous Panel). F6 alone is still Insert Keyframe.
+* **Move between open documents with Ctrl+Tab** and **Ctrl+Shift+Tab** (the Control key on
+  macOS too), or Ctrl+PageDown and Ctrl+PageUp (ADR 0112). The status bar says which document
+  you landed on. To a screen reader the document tabs are a tab list, "Open documents": each
+  tab reads its document's name, whether it is selected, and "unsaved changes" when it has
+  them, and each has a Close button named after its document.
 * **Inside a panel, Tab and Shift+Tab** move between controls in reading order; Enter or Space
   presses the focused button, ticks the focused checkbox or opens the focused menu; the arrow
   keys change a focused slider or number field.
@@ -41,6 +46,10 @@ frames, the keyboard menu bar, the system's contrast setting); the rules for con
     or Ctrl+D.
   * **Esc** goes back to the stage itself, where the arrows nudge the selection again.
   * Elements on locked layers are listed, but can't be selected.
+* **Guides from the keyboard** (ADR 0076): **View › Guides › Edit Guides**
+  (Ctrl+Alt+Shift+G) or **Add Guide** lists the scene's guides by direction and position. Type a
+  new position or delete a guide there, or add one with the direction, position and **Add
+  guide**. The rulers are named *Horizontal ruler* and *Vertical ruler*.
 * **The timeline from the keyboard.** With the timeline focused, **Left** and **Right** move
   the playhead a frame, and **Up** and **Down** move to the layer above or below.
   * Each move is announced: "Frame 12 · Ball · Frames 1–24: keyframe · motion tween".
@@ -180,8 +189,8 @@ cargo test --bin anicraft palette                      # the contrast checks
 * **Adding a point in Edit Envelope takes a click.** Each point is named for screen readers
   ("Point 2 of 4, Left channel: 80 % at 0.400 s"), and the selected point's time and levels
   are fields that take typed values; the Effect menu sets any preset from the keyboard.
-* **The system's light or dark setting is not followed**: AniCraft has one standard (dark)
-  palette. Windows' white contrast themes get the black high-contrast palette.
+* **Windows' white contrast themes get the black high-contrast palette**: the Light palette
+  (ADR 0077) follows the system's light mode, but it is not a high-contrast palette.
 * **macOS has no keyboard route to AniCraft's own menu row**: use ⌘K, which lists every menu
   command.
 * **Tab order across panels** follows how the window is built (menu bar, edit bar, tools,

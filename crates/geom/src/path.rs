@@ -79,7 +79,8 @@ impl Path {
         let mut it = src.char_indices().peekable();
         let mut nums: Vec<f32> = Vec::with_capacity(6);
         let mut cur: Option<char> = None;
-        let flush = |cur: Option<char>, nums: &mut Vec<f32>, cmds: &mut Vec<PathCmd>| -> Result<(), String> {
+        let mut emitted = false;
+        let flush = |cur: Option<char>, nums: &mut Vec<f32>, cmds: &mut Vec<PathCmd>, emitted: bool| -> Result<(), String> {
             let Some(c) = cur else {
                 return if nums.is_empty() { Ok(()) } else { Err("number before the first command".into()) };
             };
@@ -96,14 +97,18 @@ impl Path {
                 cmds.push(PathCmd::Close);
                 return Ok(());
             }
+            // A streamed batch already supplied this command's operands.
+            if nums.is_empty() && emitted {
+                return Ok(());
+            }
             if nums.is_empty() || !nums.len().is_multiple_of(need) {
                 return Err(format!("{c} needs a multiple of {need} numbers, got {}", nums.len()));
             }
-            for g in nums.chunks(need) {
+            for (index, g) in nums.chunks(need).enumerate() {
                 let v = |i: usize| Vec2::new(g[i], g[i + 1]);
                 cmds.push(match c {
-                    'M' => PathCmd::MoveTo(v(0)),
-                    'L' => PathCmd::LineTo(v(0)),
+                    'M' if !emitted && index == 0 => PathCmd::MoveTo(v(0)),
+                    'M' | 'L' => PathCmd::LineTo(v(0)),
                     'Q' => PathCmd::QuadTo(v(0), v(2)),
                     _ => PathCmd::CubicTo(v(0), v(2), v(4)),
                 });
@@ -117,8 +122,9 @@ impl Path {
         while let Some(&(i, ch)) = it.peek() {
             match ch {
                 'M' | 'L' | 'Q' | 'C' | 'Z' | 'z' => {
-                    flush(cur, &mut nums, &mut cmds)?;
+                    flush(cur, &mut nums, &mut cmds, emitted)?;
                     cur = Some(ch.to_ascii_uppercase());
+                    emitted = false;
                     it.next();
                 }
                 ' ' | ',' | '\n' | '\t' | '\r' => {
@@ -153,14 +159,15 @@ impl Path {
                             _ => return Err("Z takes no numbers".into()),
                         };
                         if nums.len().is_multiple_of(need) {
-                            flush(cur, &mut nums, &mut cmds)?;
+                            flush(cur, &mut nums, &mut cmds, emitted)?;
+                            emitted = true;
                         }
                     }
                 }
                 other => return Err(format!("unexpected character '{other}' in path data")),
             }
         }
-        flush(cur, &mut nums, &mut cmds)?;
+        flush(cur, &mut nums, &mut cmds, emitted)?;
         Ok(Path { cmds })
     }
 }
@@ -202,6 +209,36 @@ pub struct Polyline {
 const MAX_SEGMENTS_PER_CURVE: usize = 1024;
 /// Bézier circle constant.
 const KAPPA: f32 = 0.552_284_8;
+
+/// Most corners a PolyStar has on each side of its outline (sides or points).
+pub const POLYSTAR_MAX_SIDES: u32 = 256;
+
+/// The inner radius of a star of `points` points for a point size from 0 to 1 (ADR 0080): at 1
+/// the inner corners lie on the edges of the polygon through the tips (the star is that polygon),
+/// at 0 they meet in the centre (needle points), and in between the depth is proportional. Out
+/// of range or not a number, the point size is clamped (or 0.5).
+pub fn star_inner_radius(outer: f32, points: u32, point_size: f32) -> f32 {
+    let n = points.clamp(3, POLYSTAR_MAX_SIDES) as f32;
+    let size = if point_size.is_finite() { point_size.clamp(0.0, 1.0) } else { 0.5 };
+    outer * size * (std::f32::consts::PI / n).cos()
+}
+
+/// The corners of [`Path::polystar`], in order (clockwise on screen, y down), the first straight
+/// up: `sides` of them for a polygon, `2 × sides` (tip, inner, tip, …) for a star. `sides` is
+/// clamped to 3..=[`POLYSTAR_MAX_SIDES`].
+pub fn polystar_corners(cx: f32, cy: f32, radius: f32, sides: u32, star: bool, point_size: f32) -> Vec<Vec2> {
+    let n = sides.clamp(3, POLYSTAR_MAX_SIDES) as usize;
+    let inner = star_inner_radius(radius, sides, point_size);
+    let steps = if star { n * 2 } else { n };
+    (0..steps)
+        .map(|i| {
+            let r = if star && i % 2 == 1 { inner } else { radius };
+            // f64 so the corners of a big polygon stay where they belong.
+            let a = -std::f64::consts::FRAC_PI_2 + i as f64 * std::f64::consts::TAU / steps as f64;
+            Vec2::new(cx + r * a.cos() as f32, cy + r * a.sin() as f32)
+        })
+        .collect()
+}
 
 impl Path {
     pub fn new() -> Self {
@@ -246,7 +283,9 @@ impl Path {
             return Path::rect(x, y, w, h);
         }
         let k = r * (1.0 - KAPPA);
-        let (x1, y1) = (x + w, y + h);
+        // Normalise negative sizes by swapping the corners.
+        let (x, x1) = if w < 0.0 { (x + w, x) } else { (x, x + w) };
+        let (y, y1) = if h < 0.0 { (y + h, y) } else { (y, y + h) };
         let mut p = Path::new();
         p.move_to(Vec2::new(x + r, y))
             .line_to(Vec2::new(x1 - r, y))
@@ -271,6 +310,22 @@ impl Path {
             .cubic_to(Vec2::new(cx - rx, cy - ky), Vec2::new(cx - kx, cy - ry), Vec2::new(cx, cy - ry))
             .cubic_to(Vec2::new(cx + kx, cy - ry), Vec2::new(cx + rx, cy - ky), Vec2::new(cx + rx, cy))
             .close();
+        p
+    }
+
+    /// The PolyStar tool's outline (ADR 0080): a regular polygon of `sides` corners, or a star of
+    /// `sides` points whose inner corners are at [`star_inner_radius`] for `point_size`, centred
+    /// at `(cx, cy)` with the first corner straight up.
+    pub fn polystar(cx: f32, cy: f32, radius: f32, sides: u32, star: bool, point_size: f32) -> Path {
+        let mut p = Path::new();
+        for (i, v) in polystar_corners(cx, cy, radius, sides, star, point_size).into_iter().enumerate() {
+            if i == 0 {
+                p.move_to(v);
+            } else {
+                p.line_to(v);
+            }
+        }
+        p.close();
         p
     }
 
@@ -499,6 +554,80 @@ pub fn segment_distance(p: Vec2, a: Vec2, b: Vec2) -> f32 {
 mod tests {
     use super::*;
 
+    /// Shoelace area of a polygon.
+    fn poly_area(pts: &[Vec2]) -> f64 {
+        let n = pts.len();
+        (0..n).map(|i| {
+            let (a, b) = (pts[i], pts[(i + 1) % n]);
+            f64::from(a.x) * f64::from(b.y) - f64::from(b.x) * f64::from(a.y)
+        }).sum::<f64>() * 0.5
+    }
+
+    /// ADR 0080: a regular polygon's corners are on its circle, its first straight up, and its
+    /// area is n/2 · r² · sin(2π/n).
+    #[test]
+    fn polystar_polygon_is_regular() {
+        for n in [3u32, 4, 5, 6, 8, 12, 32] {
+            let r = 50.0;
+            let pts = polystar_corners(10.0, -20.0, r, n, false, 0.3);
+            assert_eq!(pts.len(), n as usize);
+            assert!((pts[0].x - 10.0).abs() < 1e-4 && (pts[0].y - (-20.0 - r)).abs() < 1e-4, "first corner straight up: {:?}", pts[0]);
+            for p in &pts {
+                assert!(((*p - Vec2::new(10.0, -20.0)).length() - r).abs() < 1e-3);
+            }
+            let want = f64::from(n) / 2.0 * f64::from(r * r) * (std::f64::consts::TAU / f64::from(n)).sin();
+            let got = poly_area(&pts);
+            assert!((got.abs() - want).abs() < want * 1e-5, "n {n}: {got} vs {want}");
+            // Clockwise on screen (y down): positive shoelace area.
+            assert!(got > 0.0);
+            // The path is the same polygon.
+            let path = Path::polystar(10.0, -20.0, r, n, false, 0.3);
+            assert_eq!(path.cmds.len(), n as usize + 1);
+        }
+    }
+
+    /// ADR 0080: a star's inner corners are at r · size · cos(π/n): at 1 they lie on the
+    /// polygon's edges (the star covers exactly the polygon), at 0 in the centre, and its area
+    /// is n · r · r_in · sin(π/n).
+    #[test]
+    fn polystar_star_point_size() {
+        let r = 80.0f32;
+        for n in [3u32, 5, 7, 32] {
+            let half = std::f64::consts::PI / f64::from(n);
+            for size in [0.0f32, 0.25, 0.5, 1.0] {
+                let pts = polystar_corners(0.0, 0.0, r, n, true, size);
+                assert_eq!(pts.len(), 2 * n as usize);
+                let inner = f64::from(r) * f64::from(size) * half.cos();
+                assert!((f64::from(star_inner_radius(r, n, size)) - inner).abs() < 1e-3);
+                for (i, p) in pts.iter().enumerate() {
+                    let want = if i % 2 == 0 { f64::from(r) } else { inner };
+                    assert!((f64::from(p.length()) - want).abs() < 1e-3, "n {n} size {size} corner {i}");
+                }
+                let want = f64::from(n) * f64::from(r) * inner * half.sin();
+                assert!((poly_area(&pts) - want).abs() <= want * 1e-4 + 1e-3, "n {n} size {size}");
+            }
+            // Point size 1: the area of the polygon through the tips.
+            let full = poly_area(&polystar_corners(0.0, 0.0, r, n, true, 1.0));
+            let poly = poly_area(&polystar_corners(0.0, 0.0, r, n, false, 1.0));
+            assert!((full - poly).abs() < poly * 1e-5);
+        }
+        // Out of range and not a number: clamped, or the default.
+        assert_eq!(star_inner_radius(10.0, 5, 3.0), star_inner_radius(10.0, 5, 1.0));
+        assert_eq!(star_inner_radius(10.0, 5, -1.0), 0.0);
+        assert_eq!(star_inner_radius(10.0, 5, f32::NAN), star_inner_radius(10.0, 5, 0.5));
+        assert_eq!(polystar_corners(0.0, 0.0, 1.0, 0, false, 0.5).len(), 3);
+        assert_eq!(polystar_corners(0.0, 0.0, 1.0, u32::MAX, false, 0.5).len(), POLYSTAR_MAX_SIDES as usize);
+    }
+
+    #[test]
+    fn rounded_rect_negative_size_matches_rect_bounds() {
+        for (w, h) in [(-10.0, 10.0), (10.0, -10.0), (-10.0, -10.0)] {
+            let b = Path::rounded_rect(0.0, 0.0, w, h, 2.0).bounds();
+            let e = Path::rect(0.0, 0.0, w, h).bounds();
+            assert_eq!((b.min, b.max), (e.min, e.max), "w={w} h={h}");
+        }
+    }
+
     #[test]
     fn flatten_rect_is_closed_polygon() {
         let pls = Path::rect(0.0, 0.0, 10.0, 5.0).flatten(&Affine::IDENTITY, 0.1);
@@ -545,6 +674,58 @@ mod tests {
         let s = p.to_svg();
         assert_eq!(Path::from_svg(&s).unwrap(), p);
         assert!(s.starts_with('M'));
+    }
+
+    #[test]
+    fn svg_implicit_commands_survive_streaming_batches() {
+        for (command, group, counts) in [('L', "1 0", [4, 8, 5]), ('Q', "1 1 2 0", [2, 4, 3]), ('C', "1 1 2 1 3 0", [2, 4, 3])] {
+            for count in counts {
+                let operands = std::iter::repeat_n(group, count).collect::<Vec<_>>().join(" ");
+                let implicit = format!("M0 0{command}{operands}");
+                let explicit = format!("M0 0{}", format!("{command}{group}").repeat(count));
+                for suffix in ["", "Z", "L9 9"] {
+                    assert_eq!(
+                        Path::from_svg(&format!("{implicit}{suffix}")).unwrap(),
+                        Path::from_svg(&format!("{explicit}{suffix}")).unwrap(),
+                        "{implicit} with suffix {suffix:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn svg_moveto_repeats_become_lines_across_streaming_batches() {
+        for count in [2, 4, 8, 5, 9] {
+            let points: Vec<_> = (0..count).map(|i| format!("{i} {}", i * 2)).collect();
+            let implicit = format!("M{}", points.join(" "));
+            let explicit = format!("M0 0L{}", points[1..].join("L"));
+            for (suffix, explicit_suffix) in [
+                ("", ""),
+                ("Z", "Z"),
+                ("M20 20 30 30", "M20 20L30 30"),
+                ("ZM20 20 30 30", "ZM20 20L30 30"),
+                ("L40 40M50 50 60 60", "L40 40M50 50L60 60"),
+            ] {
+                assert_eq!(
+                    Path::from_svg(&format!("{implicit}{suffix}")).unwrap(),
+                    Path::from_svg(&format!("{explicit}{explicit_suffix}")).unwrap(),
+                    "{implicit} with suffix {suffix:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn svg_streaming_batches_still_reject_incomplete_commands() {
+        for (command, complete) in
+            [('M', "M0 0 1 0 2 0 3 0"), ('L', "M0 0L1 0 2 0 3 0 4 0"), ('Q', "M0 0Q1 1 2 0 3 1 4 0"), ('C', "M0 0C1 1 2 1 3 0 4 1 5 1 6 0")]
+        {
+            let different = if command == 'L' { 'Q' } else { 'L' };
+            for invalid in [format!("M0 0{command}"), format!("{complete}{command}"), format!("{complete}{different}"), format!("{complete} 9")] {
+                assert!(Path::from_svg(&invalid).is_err(), "{invalid}");
+            }
+        }
     }
 
     #[test]

@@ -1,16 +1,18 @@
 //! Timeline panel: transport, layer list and a virtualised frame grid.
 
-use crate::app::{App, BottomTab};
+use crate::app::App;
 use crate::icons::{self, Icon};
 use crate::menus;
 use crate::theme::{SQUARE, T, TARGET, Type, color, font, text, to_color32, with_type};
-use anicraft_engine::doc::{Easing, Layer, LayerId, LayerKind, TweenKind};
+use anicraft_engine::doc::{Layer, LayerId, LayerKind, TweenKind};
 use crate::a11y::{self, Named};
 use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, WidgetType, pos2, vec2};
 use serde_json::json;
 use std::sync::Arc;
 
-const LAYER_W: f32 = 252.0;
+/// The narrowest the layer column goes, and the least room kept for frames beside it.
+const MIN_LAYER_W: f32 = *crate::prefs::LAYER_W_RANGE.start();
+const MIN_FRAMES_W: f32 = 40.0;
 /// Rows are click targets (≥ `theme::TARGET`).
 const ROW_H: f32 = TARGET;
 const RULER_H: f32 = 24.0;
@@ -33,6 +35,14 @@ fn start_pad(cell_w: f32, extra: f32) -> f32 {
 fn frame_center(cell_left: f32, cell_w: f32) -> f32 {
     (cell_left + cell_w * 0.5).round() + 0.5
 }
+
+/// Where the playhead goes when the ruler is clicked or dragged: the pointed-to frame,
+/// stopped at the last frame that has material (#352), so the playhead never leaves the
+/// edited timeline. Cell clicks, keys and `timeline.goto` keep their own behaviour.
+fn playhead_target(frame: u32, frames: u32) -> u32 {
+    frame.min(frames.saturating_sub(1))
+}
+
 const FOOTER_H: f32 = 38.0;
 /// The bottom bar's frame zoom and Frame View at its right end: the 56 pt slider, its field, the
 /// menu button and spacing.
@@ -138,6 +148,27 @@ impl FrameSel {
         let (f0, f1) = self.frames();
         self.rows(layers).is_some_and(|(a, b)| row >= a && row <= b) && frame >= f0 && frame <= f1
     }
+    /// Whether the selection is whole spans, at least one of them a tween (classic, shape or
+    /// motion): on every selected layer it starts where a span starts and ends where a span
+    /// ends. Dragging such a selection moves the spans whole, as in Animate (ADR 0083).
+    pub fn is_whole_tweens(&self, layers: &[Arc<Layer>]) -> bool {
+        let (f0, f1) = self.frames();
+        let ids = self.layers(layers);
+        let mut tween = false;
+        for l in layers.iter().filter(|l| ids.contains(&l.id) && l.kind != LayerKind::Folder) {
+            let mut inside = l.keyframes.iter().filter(|k| k.start >= f0 && k.start <= f1).peekable();
+            let Some(first) = inside.peek().map(|k| k.start) else { return false };
+            let mut end = first;
+            for k in inside {
+                tween |= k.motion.is_some() || k.tween.is_some();
+                end = k.end();
+            }
+            if first != f0 || end != f1 + 1 {
+                return false;
+            }
+        }
+        tween
+    }
     /// Whether any selected layer has a keyframe starting in the selected frames.
     pub fn has_keys(&self, layers: &[Arc<Layer>]) -> bool {
         let (f0, f1) = self.frames();
@@ -159,6 +190,116 @@ pub enum TlDrag {
     Span { layer: LayerId, start: u32, end: u32, to: u32 },
 }
 
+/// Where a layer dragged by its name lands (#407), as `layer.move` takes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LayerDrop {
+    /// Just above this layer, beside it.
+    Before(LayerId),
+    /// Just below this layer and whatever it holds, beside it.
+    After(LayerId),
+    /// First inside this folder.
+    Into(LayerId),
+}
+
+impl LayerDrop {
+    /// The `layer.move` parameters that put `layer` there.
+    pub fn params(self, layer: LayerId) -> serde_json::Value {
+        match self {
+            LayerDrop::Before(t) => json!({"layer": layer.0, "before": t.0}),
+            LayerDrop::After(t) => json!({"layer": layer.0, "after": t.0}),
+            LayerDrop::Into(t) => json!({"layer": layer.0, "into": t.0}),
+        }
+    }
+}
+
+/// A layer row as somewhere to drop a dragged layer.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DropRow {
+    pub top: f32,
+    pub bottom: f32,
+    pub id: LayerId,
+    pub folder: bool,
+    /// The row under this one, when it shows and is inside this layer (an open folder's first
+    /// layer, a mask's first masked layer).
+    pub first_child: Option<LayerId>,
+    /// The dragged layer itself, or a layer inside it: nowhere to drop.
+    pub dragged: bool,
+}
+
+/// Where a layer dropped at height `y` over `rows` (top down) lands. The upper half of a row
+/// is above it and the lower half below it; a folder's middle half is inside it. Below a row
+/// that shows layers of its own is inside it, above the first of them. `None` over the dragged
+/// layer's own rows, or with no rows at all.
+pub fn layer_drop(rows: &[DropRow], y: f32) -> Option<LayerDrop> {
+    let first = rows.first()?;
+    let row = if y < first.top { first } else { rows.iter().find(|r| y < r.bottom).or(rows.last())? };
+    if row.dragged {
+        return None;
+    }
+    let t = ((y - row.top) / (row.bottom - row.top).max(1.0)).clamp(0.0, 1.0);
+    let below = match row.first_child {
+        Some(_) if row.folder => LayerDrop::Into(row.id),
+        Some(c) => LayerDrop::Before(c),
+        None => LayerDrop::After(row.id),
+    };
+    Some(if row.folder {
+        if t < 0.25 {
+            LayerDrop::Before(row.id)
+        } else if t > 0.75 {
+            below
+        } else {
+            LayerDrop::Into(row.id)
+        }
+    } else if t < 0.5 {
+        LayerDrop::Before(row.id)
+    } else {
+        below
+    })
+}
+
+/// The motion tween span holding `frame` on `layer`, as a frame selection.
+fn whole_motion_span(layer: &Layer, frame: u32) -> Option<FrameSel> {
+    let k = layer.keyframe_at(frame).filter(|k| k.motion.is_some())?;
+    Some(FrameSel { anchor: (layer.id, k.start), head: (layer.id, k.end() - 1) })
+}
+
+/// Whether Split Motion can cut the motion tween at the playhead (not on its first frame), and
+/// the last frame Join Motion would join up to: the selection's end when it covers several
+/// motion spans, else the span after the one at the playhead (when that is a motion tween too).
+pub fn motion_cuts(app: &App) -> (bool, Option<u32>) {
+    let Some(layer) = app.s.active_layer() else { return (false, None) };
+    let f = app.s.frame;
+    let Some(k) = layer.keyframe_at(f).filter(|k| k.motion.is_some()) else { return (false, None) };
+    let split = f > k.start;
+    let next = layer.keyframes.iter().find(|n| n.start == k.end()).filter(|n| n.motion.is_some());
+    let to = match app.frame_sel.map(|s| s.frames()) {
+        Some((_, f1)) if f1 >= k.end() => Some(f1),
+        _ => next.map(|n| n.start),
+    };
+    (split, to.filter(|_| next.is_some()))
+}
+
+/// Split Motion at the playhead: two tweens, each moving as before.
+pub fn split_motion(app: &mut App) {
+    if app.run("motion.split", json!({"frame": app.s.frame})).is_some() {
+        app.status_ok(tr!("Split the motion tween in two at frame {frame} — {undo} to undo", frame = app.s.frame + 1, undo = app.undo_key()));
+    }
+}
+
+/// Join Motion: the tween at the playhead with the ones after it, up to frame `to`.
+pub fn join_motion(app: &mut App, to: Option<u32>) {
+    let Some(to) = to else { return };
+    let start = app.s.active_layer().and_then(|l| l.keyframe_at(app.s.frame)).map_or(app.s.frame, |k| k.start);
+    if let Some(v) = app.run("motion.join", json!({"frame": start, "to": to})) {
+        let n = v["joined"].as_u64().unwrap_or(2);
+        let frames = v["frames"].as_u64().unwrap_or(0) as u32;
+        if let Some(l) = app.s.active_layer() {
+            app.frame_sel = Some(FrameSel { anchor: (l.id, start), head: (l.id, start + frames.saturating_sub(1)) });
+        }
+        app.status_ok(trn!("Joined {n} motion tween into one — {undo} to undo", "Joined {n} motion tweens into one — {undo} to undo", n, undo = app.undo_key()));
+    }
+}
+
 /// Range params for the frame commands when frames are selected: `{layers, frame, count}`.
 pub fn range_params(app: &App) -> Option<serde_json::Value> {
     let sel = app.frame_sel?;
@@ -169,6 +310,36 @@ pub fn range_params(app: &App) -> Option<serde_json::Value> {
     let (f0, f1) = sel.frames();
     let ids: Vec<u64> = layers.iter().map(|l| l.0).collect();
     Some(json!({"layers": ids, "frame": f0, "count": f1 - f0 + 1}))
+}
+
+/// Params for F5, F6 and F7 when they act at one frame, as in Animate: with no frame selection
+/// F5 extends every layer that reaches the playhead (#242), and the playhead moves on to the frame
+/// or key just made, so pressing the key again keeps going (#254). `None`: not one of them, or a
+/// selection of more than one frame (that is a range edit, see [`range_params`]).
+pub fn insert_key_params(app: &App, id: &str) -> Option<serde_json::Value> {
+    if !matches!(id, "timeline.insert_frame" | "timeline.insert_keyframe" | "timeline.insert_blank_keyframe") {
+        return None;
+    }
+    match range_params(app) {
+        Some(mut p) if p["count"] == json!(1) => {
+            p["advance"] = json!(true);
+            Some(p)
+        }
+        Some(_) => None,
+        None if id == "timeline.insert_frame" => Some(json!({"all_layers": true, "advance": true})),
+        None => Some(json!({"advance": true})),
+    }
+}
+
+/// A one-frame selection moves with the playhead after F5 / F6 / F7 (as in Animate), instead of
+/// being dropped for being left behind.
+pub fn follow_playhead(app: &mut App) {
+    if let Some(sel) = app.frame_sel.as_mut()
+        && sel.anchor.1 == sel.head.1
+    {
+        sel.anchor.1 = app.s.frame;
+        sel.head.1 = app.s.frame;
+    }
 }
 
 /// Frame commands that act on the frame selection.
@@ -184,8 +355,13 @@ pub fn paste_params(app: &App) -> Option<serde_json::Value> {
 /// An icon button: a full-size target around a Lucide glyph, named by its tooltip.
 /// `on` is a toggle's state (`None` for a plain button); a toggle that is on is filled.
 pub fn icon_button(ui: &mut egui::Ui, tip: &str, on: Option<bool>, icon: Icon) -> egui::Response {
+    icon_button_wide(ui, tip, on, icon, TARGET + 4.0)
+}
+
+/// [`icon_button`] at another width: narrower at the end of a row of fields in a narrow panel.
+pub fn icon_button_wide(ui: &mut egui::Ui, tip: &str, on: Option<bool>, icon: Icon, width: f32) -> egui::Response {
     let active = on == Some(true);
-    let (rect, resp) = ui.allocate_exact_size(vec2(TARGET + 4.0, TARGET), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, TARGET), Sense::click());
     // Same language as the tools: a toggle that is on is a lighter gray block, icon white.
     let bg = if active {
         T.active
@@ -219,6 +395,7 @@ fn transport(app: &mut App, ui: &mut egui::Ui) {
     if icon_button(ui, tr!("Loop playback"), Some(looping), Icon::Loop).clicked() {
         app.looping = !app.looping;
     }
+    volume(app, ui);
     crate::onion::buttons(app, ui);
     // Add Camera, as Animate has it on the timeline: on while the scene has a camera; a click
     // then takes it away (asking first when the camera moves; undoable).
@@ -234,20 +411,51 @@ fn transport(app: &mut App, ui: &mut egui::Ui) {
     }
 }
 
+/// The monitor volume (ADR 0095): a speaker that mutes and a short slider, for playback,
+/// scrubbing, previews and Test Movie. The listener's (kept in the preferences), never the
+/// document's: exports keep their sound. Layer volumes are in Properties.
+fn volume(app: &mut App, ui: &mut egui::Ui) {
+    let muted = app.prefs.sound_muted;
+    let tip = if muted { tr!("Unmute sounds") } else { tr!("Mute sounds (while you work; exports keep their sound)") };
+    if icon_button(ui, tip, Some(muted), if muted { Icon::SoundOff } else { Icon::Sound }).clicked() {
+        app.prefs.sound_muted = !muted;
+        app.save_prefs();
+    }
+    let mut pct = (app.prefs.sound_volume.clamp(0.0, 1.0) * 100.0).round();
+    let r = ui
+        .scope(|ui| {
+            ui.spacing_mut().slider_width = VOLUME_W;
+            ui.add_enabled(!muted, egui::Slider::new(&mut pct, 0.0..=100.0).step_by(1.0).show_value(false).trailing_fill(true))
+        })
+        .inner
+        .named(tr!("Playback volume"));
+    let r = r.on_hover_text(tr!("Playback volume: {pct} %", pct = pct));
+    if r.changed() {
+        // Heard at once while dragging; written to the preferences when the drag ends.
+        app.prefs.sound_volume = pct / 100.0;
+        if !r.dragged() {
+            app.save_prefs();
+        }
+    }
+    if r.drag_stopped() {
+        app.save_prefs();
+    }
+}
+
+/// The header's volume slider, in points: short, as the header is full.
+const VOLUME_W: f32 = 56.0;
+
+/// The timeline header's tools, beside the dock's tabs (ADR 0075): transport, readouts, frame
+/// and tween buttons, `width` wide at most. What doesn't fit scrolls sideways (Shift+wheel) in
+/// a small window or at a large interface scale, instead of being cut off.
+pub fn header_tools(app: &mut App, ui: &mut egui::Ui, width: f32) {
+    let out = egui::ScrollArea::horizontal().id_salt("tl_header").max_width(width.max(40.0)).show(ui, |ui| ui.horizontal(|ui| header(app, ui)));
+    app.tl_header_spill = out.content_size.x - out.inner_rect.width();
+}
+
+/// The timeline panel's body: layers and frames (its header is in the dock's tab row).
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let dock = ui.max_rect();
-    // ---- header ---------------------------------------------------------------------------
-    egui::Frame::NONE.fill(T.panel_alt).inner_margin(egui::Margin::symmetric(10, 5)).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            // The whole width is the header's (frame zoom and Frame View sit in the bottom bar,
-            // as in Animate). What doesn't fit scrolls sideways (Shift+wheel) in a small window
-            // or at a large interface scale, instead of being cut off.
-            let w = ui.available_width();
-            let out = egui::ScrollArea::horizontal().id_salt("tl_header").max_width(w).show(ui, |ui| ui.horizontal(|ui| header(app, ui, dock)));
-            app.tl_header_spill = out.content_size.x - out.inner_rect.width();
-        });
-    });
-
     // A frame selection lives while the playhead is inside it and its layers exist.
     if let Some(sel) = app.frame_sel {
         let (f0, f1) = sel.frames();
@@ -257,18 +465,19 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         }
     }
 
-    if app.bottom == BottomTab::MotionEditor {
-        crate::motion_editor::show(app, ui);
-        return;
-    }
-
     // ---- body -----------------------------------------------------------------------------
     let body = ui.available_rect_before_wrap();
     ui.allocate_rect(body, Sense::hover());
     let painter = ui.painter_at(body);
     painter.rect_filled(body, 0.0, T.panel);
 
-    let grid = Rect::from_min_max(pos2(body.left() + LAYER_W, body.top()), body.right_bottom());
+    // In a narrow dock (ADR 0087) the layer column gives up width to keep a strip of frames;
+    // the layers' toggles stay whole and their names are cut short.
+    // Its width is the user's (the line between the layers and the frames drags, #384).
+    // The parenting view's column (ADR 0113) is added to it while open, so names keep their room.
+    let parent_w = if app.prefs.timeline_parenting { crate::parenting::Column::width(app.s.timeline()) } else { 0.0 };
+    let layer_w = (app.tl_layer_w_drag.unwrap_or(app.prefs.timeline_layer_w) + parent_w).min(body.width() - MIN_FRAMES_W).max(MIN_LAYER_W);
+    let grid = Rect::from_min_max(pos2(body.left() + layer_w, body.top()), body.right_bottom());
     let frames_total = app.s.frame_count();
     app.tl_cell_w = app.tl_cell_w.clamp(*CELL_RANGE.start(), *CELL_RANGE.end());
     // Ctrl+wheel (or pinch) over the frames zooms about the pointer: the frame under it stays put.
@@ -371,7 +580,55 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let ruler = Rect::from_min_max(grid.left_top(), pos2(grid.right(), grid.top() + RULER_H));
     painter.rect_filled(ruler, 0.0, T.panel_alt);
     painter.rect_filled(Rect::from_min_max(body.left_top(), pos2(grid.left(), ruler.bottom())), 0.0, T.panel_alt);
-    painter.text(pos2(body.left() + 10.0, ruler.center().y), Align2::LEFT_CENTER, tr!("Layers"), font(Type::Heading), color(Type::Heading));
+    let heading = painter.text(pos2(body.left() + 10.0, ruler.center().y), Align2::LEFT_CENTER, tr!("Layers"), font(Type::Heading), color(Type::Heading));
+    // The parenting view's toggle sits beside the heading, as in Animate (ADR 0113).
+    {
+        let side = TOGGLE.min(RULER_H);
+        crate::parenting::head_toggle(app, ui, &painter, Rect::from_center_size(pos2(heading.right() + 8.0 + side * 0.5, ruler.center().y), vec2(side, side)));
+    }
+    // The eye, the padlock and the square above the columns they head show, lock or outline
+    // every layer at once, as in Animate (#422). Each shows its other face once every layer
+    // is that way, and the next click brings them all back.
+    {
+        let (all_hidden, all_locked, all_outline) = {
+            let tl = app.s.timeline();
+            let plain = || tl.layers.iter().filter(|l| l.kind != LayerKind::Camera);
+            let any = plain().next().is_some();
+            (any && plain().all(|l| !l.visible), any && plain().all(|l| l.locked), any && plain().all(|l| l.outline))
+        };
+        let side = TOGGLE.min(RULER_H);
+        let head = |k: f32| Rect::from_center_size(pos2(grid.left() - 16.0 - k * (TOGGLE + 2.0), ruler.center().y), vec2(side, side));
+        let hover = ui.input(|inp| inp.pointer.hover_pos());
+        for (k, id, salt, name, away) in [
+            (2.0, "layer.toggle_visible", "eye", if all_hidden { tr!("Show all layers") } else { tr!("Hide all layers") }, all_hidden),
+            (1.0, "layer.toggle_lock", "lock", if all_locked { tr!("Unlock all layers") } else { tr!("Lock all layers") }, all_locked),
+            (0.0, "layer.toggle_outline", "outline", if all_outline { tr!("Show all layers as artwork") } else { tr!("Show all layers as outlines") }, all_outline),
+        ] {
+            let r = head(k);
+            if hover.is_some_and(|h| r.contains(h)) {
+                painter.rect_filled(r, T.rc(), T.hover);
+            }
+            let tint = if away { T.text } else { T.text_dim };
+            let glyph = Rect::from_center_size(r.center(), vec2(15.0, 15.0));
+            match salt {
+                "eye" => icons::paint(&painter, glyph, if away { Icon::EyeOff } else { Icon::Eye }, tint),
+                "lock" => icons::paint(&painter, glyph, if away { Icon::Lock } else { Icon::Unlock }, tint),
+                _ => {
+                    let sq = Rect::from_center_size(r.center(), vec2(10.0, 10.0));
+                    if away {
+                        painter.rect_stroke(sq, 0.0, Stroke::new(1.5, tint), StrokeKind::Inside);
+                    } else {
+                        painter.rect_filled(sq, 0.0, tint);
+                    }
+                }
+            }
+            let rr = ui.interact(r, ui.id().with(("all_layers", salt)), Sense::click());
+            a11y::control(ui, &rr, WidgetType::Button, name, None);
+            if rr.on_hover_text(name).clicked() {
+                app.run(id, json!({"all": true}));
+            }
+        }
+    }
     let step = [1u32, 2, 5, 10, 20, 50, 100, 200, 500].into_iter().find(|s| *s as f32 * cell_w >= 28.0).unwrap_or(1000);
     let minor = if cell_w >= 6.0 { 1 } else { step / 5 }.max(1);
     for f in first..first + visible_cols + 1 {
@@ -402,7 +659,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         && app.onion_ui.drag.is_none()
         && let Some(p) = ruler_resp.interact_pointer_pos() {
             app.playing = false;
-            app.run("timeline.goto", json!({"frame": frame_at(p.x)}));
+            app.run("timeline.goto", json!({"frame": playhead_target(frame_at(p.x), app.s.frame_count())}));
         }
     // The onion menu on a right-click, as the markers live here (ADR 0047).
     ruler_resp.context_menu(|ui| crate::onion::menu(app, ui));
@@ -428,6 +685,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let rows_top = ruler.bottom();
     let rows_bottom = body.bottom() - FOOTER_H;
     let tl_now = app.s.timeline().clone();
+    // The parenting view (ADR 0113): a column of dots left of the toggles, the same place on
+    // every row (a row has at most six toggles).
+    let parent_col = app.prefs.timeline_parenting.then(|| {
+        // Left of the leftmost toggle any row of this timeline has: eye, lock, outline and onion,
+        // a speaker when a layer has sounds, the camera's attach toggle when there is a camera.
+        let most = 3.0 + f32::from(u8::from(tl_now.layers.iter().any(|l| l.has_sounds()))) + f32::from(u8::from(tl_now.camera_layer().is_some() && app.s.editing.is_empty()));
+        crate::parenting::Column::new(&tl_now, grid.left() - 16.0 - most * (TOGGLE + 2.0) - TOGGLE * 0.5 - 4.0)
+    });
+    let mut parent_dots: Vec<crate::parenting::Dot> = Vec::new();
     let mut next_y = rows_top;
     // Where each row is, for files dropped on a layer's frame (ADR 0065).
     let mut drop_rows = Vec::new();
@@ -494,8 +760,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         let onion_t = (!is_camera && !is_folder).then(|| toggle(3.0));
         // A layer with sounds has a speaker before the others: Mute (ADR 0039).
         let speaker = layer.has_sounds().then(|| toggle(if onion_t.is_some() { 4.0 } else { 3.0 }));
+        // With a camera in the scene, layers with artwork can be attached to it (ADR 0082):
+        // they then stay put on screen while it moves.
+        let attach_t = (tl_now.camera_layer().is_some() && app.s.editing.is_empty() && crate::layer_depth::has_depth(layer.kind)).then(|| toggle(3.0 + f32::from(u8::from(onion_t.is_some())) + f32::from(u8::from(speaker.is_some()))));
         let hover = ui.input(|inp| inp.pointer.hover_pos());
-        for r in [eye, lock, outl].into_iter().take(if is_camera { 2 } else { 3 }).chain(onion_t).chain(speaker) {
+        for r in [eye, lock, outl].into_iter().take(if is_camera { 2 } else { 3 }).chain(onion_t).chain(speaker).chain(attach_t) {
             if hover.is_some_and(|h| r.contains(h)) {
                 painter.rect_filled(r, T.rc(), T.hover);
             }
@@ -521,6 +790,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 painter.line_segment([g.left_bottom(), g.right_top()], Stroke::new(1.5, c_off));
             }
         }
+        // Attached to the camera: the camera glyph, bright when attached.
+        if let Some(at) = attach_t {
+            icons::paint(&painter, glyph(at), Icon::Camera, if layer.attached { T.accent_text } else { c_off });
+        }
         // outline swatch
         let sw = Rect::from_center_size(outl.center(), vec2(10.0, 10.0));
         if is_camera {
@@ -531,8 +804,29 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         } else {
             painter.rect_filled(sw, 0.0, to_color32(layer.color));
         }
-        let name_rect = Rect::from_min_max(left.left_top(), pos2(speaker.or(onion_t).unwrap_or(eye).left() - 4.0, left.bottom()));
-        let nr = ui.interact(name_rect, ui.id().with(("lname", layer.id.0)), Sense::click());
+        let name_end = match parent_col {
+            Some(col) => col.left - 2.0,
+            None => attach_t.or(speaker).or(onion_t).unwrap_or(eye).left() - 4.0,
+        };
+        let name_rect = Rect::from_min_max(left.left_top(), pos2(name_end.max(left.left() + 8.0), left.bottom()));
+        if let Some(col) = parent_col {
+            // The name gives way to the column: what is under it is painted over.
+            let until = attach_t.or(speaker).or(onion_t).unwrap_or(eye).left() - 1.0;
+            painter.rect_filled(Rect::from_min_max(pos2(col.left - 2.0, left.top()), pos2(until.max(col.right), left.bottom())), 0.0, if is_active { T.accent_dim } else if r % 2 == 0 { T.panel } else { T.panel_alt });
+            parent_dots.extend(crate::parenting::row(app, ui, &tl_now, layer, col, left.center().y, tg));
+        }
+        // The name is the row's handle too: drag it to move the layer (#407). The camera stays
+        // on top.
+        let nr = ui.interact(name_rect, ui.id().with(("lname", layer.id.0)), if layer.kind == LayerKind::Camera { Sense::click() } else { Sense::click_and_drag() });
+        if nr.drag_started_by(egui::PointerButton::Primary) && layer.kind != LayerKind::Camera {
+            app.tl_layer_drag = Some(layer.id);
+            if app.s.layer != layer.id {
+                app.run("layer.select", json!({"layer": layer.id.0}));
+            }
+        }
+        if app.tl_layer_drag == Some(layer.id) {
+            painter.rect_filled(left, 0.0, T.accent.gamma_multiply(0.18));
+        }
         // Screen readers hear the row as a selectable item, "Ball · layer", then its toggles.
         let name = &layer.name;
         let row_name = match layer.kind {
@@ -545,6 +839,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             LayerKind::Normal => tr!("{name} · layer", name = name),
         };
         let row_name = if has_selection { tr!("{row} · has selected artwork", row = row_name) } else { row_name };
+        // A faded layer says so (ADR 0111): its opacity beside its name, and to screen readers.
+        let faded = ((layer.shown_opacity() * 100.0).round() as u32).min(100);
+        let row_name = if faded < 100 { tr!("{row} · {percent} % opacity", row = row_name, percent = faded) } else { row_name };
+        if faded < 100 && !is_camera {
+            painter.text(pos2(name_rect.right() - 2.0, name_rect.center().y), egui::Align2::RIGHT_CENTER, format!("{faded}%"), crate::theme::font(Type::DataSmall), T.text_faint);
+        }
         a11y::control(ui, &nr, WidgetType::SelectableLabel, &row_name, Some(is_active));
         // Ctrl+F6 lands on the active layer, or on the top row shown when it is scrolled away
         // (rows are drawn top down, so the active row, when drawn, has the last word).
@@ -564,6 +864,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             let rr = if salt == "outline" { rr.on_hover_text(tr!("View as outlines in the layer's colour (on the stage only)")) } else { rr };
             if rr.clicked() {
                 app.run(id, json!({"layer": layer.id.0}));
+            }
+        }
+        if let Some(at) = attach_t {
+            let rr = ui.interact(at, ui.id().with(("attach", layer.id.0)), Sense::click());
+            a11y::control(ui, &rr, WidgetType::Checkbox, &tr!("Attach {name} to camera", name = name), Some(layer.attached));
+            if rr.on_hover_text(tr!("Attach Layer to Camera: the layer stays where it is on screen while the camera moves (titles, HUDs)")).clicked() {
+                app.run("layer.set_attached", json!({"layer": layer.id.0}));
             }
         }
         if let Some(ot) = onion_t {
@@ -667,6 +974,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             if !is_folder && menus::check_item(ui, tr!("Onion Skin"), layer.onion, true) {
                 app.run("layer.set_onion", json!({"layer": layer.id.0}));
             }
+            // Opacity (ADR 0111, #279): one click for the usual values; any other in Properties.
+            ui.menu_button(tr!("Opacity"), |ui| {
+                let now = (layer.shown_opacity() * 100.0).round() as u32;
+                for o in [100u32, 75, 50, 25, 0] {
+                    if menus::check_item(ui, &format!("{o} %"), now == o, true) {
+                        app.run("layer.set_opacity", json!({"layer": layer.id.0, "opacity": o}));
+                    }
+                }
+            });
             ui.menu_button(tr!("Layer Height"), |ui| {
                 for h in 1..=anicraft_engine::doc::MAX_LAYER_HEIGHT {
                     if menus::check_item(ui, &format!("{} %", u32::from(h) * 100), layer.height() == h, true) {
@@ -677,6 +993,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             if ui.button(tr!("Properties…")).clicked() {
                 crate::layer_props::open(app, Some(layer.id));
                 ui.close();
+            }
+            // Layer parenting (ADR 0113): the layer follows the object on its parent layer.
+            if layer.can_follow() {
+                ui.menu_button(tr!("Parent"), |ui| crate::parenting::menu(app, ui, layer.id));
             }
             ui.separator();
             // Layer type, as check items: Mask (masks the layer below) and Masked.
@@ -725,7 +1045,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         for f in first..first + visible_cols + 1 {
             let x = x_of(f);
             if (f + 1) % 5 == 0 && cell_w >= 6.0 {
-                cp.rect_filled(Rect::from_min_size(pos2(x, y), vec2(cell_w, rh)), 0.0, Color32::from_white_alpha(6));
+                cp.rect_filled(Rect::from_min_size(pos2(x, y), vec2(cell_w, rh)), 0.0, T.cell_tint);
             }
             // Cell lines thin out with the ruler when zoomed out, so rows never turn to hatching.
             if (f + 1) % minor == 0 {
@@ -748,7 +1068,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             let fill = if motion.is_some() {
                 T.tween_motion
             } else if tweened {
-                if k.tween.is_some_and(|t| t.kind == TweenKind::Shape) { T.tween_shape } else { T.tween }
+                if k.tween.as_ref().is_some_and(|t| t.kind == TweenKind::Shape) { T.tween_shape } else { T.tween }
             } else if empty {
                 T.span_empty
             } else {
@@ -829,7 +1149,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         {
             let (f0, f1) = sel.frames();
             let g = Rect::from_min_max(pos2(x_of(f0), y + 1.0), pos2(x_of(f1 + 1) - 1.0, y + rh - 1.0)).translate(vec2(by as f32 * cell_w, 0.0));
-            cp.rect_stroke(g, SQUARE, Stroke::new(2.0, Color32::WHITE), StrokeKind::Inside);
+            cp.rect_stroke(g, SQUARE, Stroke::new(2.0, T.text), StrokeKind::Inside);
         }
         // Span length being dragged on this row: the new end line and its length readout.
         if let TlDrag::Span { layer: lid, start, end, to } = app.tl_drag
@@ -840,19 +1160,29 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             let changed = Rect::from_min_max(pos2(a, y + 2.0), pos2(b - 1.0, y + rh - 2.0));
             cp.rect_filled(changed, SQUARE, if to > end { T.selection.gamma_multiply(0.35) } else { Color32::from_black_alpha(120) });
             let x = x_of(to);
-            cp.line_segment([pos2(x, y + 1.0), pos2(x, y + rh - 1.0)], Stroke::new(2.0, Color32::WHITE));
+            cp.line_segment([pos2(x, y + 1.0), pos2(x, y + rh - 1.0)], Stroke::new(2.0, T.text));
             let n = to - start;
             let secs = n as f32 / app.s.doc.stage.fps.max(1.0);
-            let label = trn!("{n} frame · {secs} s", "{n} frames · {secs} s", n, secs = format!("{secs:.2}"));
-            let at = pos2(x + 6.0, y + rh * 0.5);
+            let mut label = trn!("{n} frame · {secs} s", "{n} frames · {secs} s", n, secs = format!("{secs:.2}"));
+            // A motion tween's keys stretch with it (Shift keeps them where they are).
+            if layer.keyframe_starting_at(start).and_then(|i| layer.keyframes.get(i)).is_some_and(|k| k.motion.is_some()) {
+                let how = if ui.input(|i| i.modifiers.shift) { tr!("keys stay (Shift)") } else { tr!("keys stretch") };
+                label = format!("{label} · {how}");
+            }
             let galley = painter.layout_no_wrap(label, font(Type::DataSmall), T.text);
             let (w, h) = (galley.rect.width(), galley.rect.height());
+            // Right of the end line, or left of it where the grid ends.
+            let at = if x + 12.0 + w > grid.right() { pos2(x - 12.0 - w, y + rh * 0.5) } else { pos2(x + 6.0, y + rh * 0.5) };
             let bg = Rect::from_min_size(at - vec2(3.0, h * 0.5 + 2.0), vec2(w + 6.0, h + 4.0));
             painter.rect_filled(bg, T.rc(), T.chrome);
             painter.rect_stroke(bg, T.rc(), Stroke::new(1.0, T.border), StrokeKind::Inside);
             painter.galley(bg.min + vec2(3.0, 2.0), galley, T.text);
         }
         let cr = ui.interact(cells, ui.id().with(("cells", layer.id.0)), a11y::pointer_only());
+        if is_active {
+            // Where the active row's frames are drawn, for tests that point at them.
+            ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("tl_geometry"), (cells, grid.left() + pad, cell_w, scroll)));
+        }
         a11y::control(ui, &cr, WidgetType::Button, &tr!("Frames of {name}", name = layer.name), None);
         if is_active {
             // Its keyframes and spans, one by one, for screen readers (ADR 0064).
@@ -867,16 +1197,40 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             && let Some(p) = cr.interact_pointer_pos()
             && layer.keyframe_at(frame_at(p.x)).is_some_and(|k| k.motion.is_some())
         {
-            app.bottom = BottomTab::MotionEditor;
+            app.show_panel(crate::dock::Panel::MotionEditor);
         }
         // The right edge of a span is a handle: drag it to make the span longer or shorter
         // (later frames move with it, as with F5 / Shift+F5).
-        let span_end_at = |px: f32| layer.keyframes.iter().find(|k| k.end() > first && k.start <= first + visible_cols && (x_of(k.end()) - px).abs() <= 4.0).map(|k| (k.start, k.end()));
+        // The handle lies inside the span's last frame, and past the end only where no keyframe
+        // follows: the next keyframe's own cell is for selecting and dragging that keyframe
+        // (#344: a press on the left of a keyframe used to resize the span before it).
+        let span_end_at = |px: f32| {
+            let grip = (cell_w * 0.34).min(4.0);
+            layer.keyframes.iter().enumerate().find(|(n, k)| {
+                let d = px - x_of(k.end());
+                let after = if layer.keyframes.get(n + 1).is_some_and(|next| next.start == k.end()) { 0.0 } else { grip };
+                k.end() > first && k.start <= first + visible_cols && d >= -grip && d < after
+            })
+            .map(|(_, k)| (k.start, k.end()))
+        };
         if cr.hovered() && app.tl_drag == TlDrag::None && cr.hover_pos().and_then(|p| span_end_at(p.x)).is_some() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
         if matches!(app.tl_drag, TlDrag::Span { .. }) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+        }
+        // Selected frames that hold keyframes can be dragged away (as in Animate: select, then
+        // drag). The hand says so before the press, and closes while they move (#344).
+        if cr.hovered()
+            && app.tl_drag == TlDrag::None
+            && let Some(p) = cr.hover_pos()
+            && span_end_at(p.x).is_none()
+            && app.frame_sel.is_some_and(|s| s.contains(&layers, i, frame_at(p.x)) && s.has_keys(&layers))
+        {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+        if matches!(app.tl_drag, TlDrag::Move { .. }) {
+            ui.ctx().set_cursor_icon(if ui.input(|inp| inp.modifiers.alt) { egui::CursorIcon::Copy } else { egui::CursorIcon::Grabbing });
         }
         if cr.drag_started()
             && let Some(p) = ui.input(|inp| inp.pointer.press_origin())
@@ -899,12 +1253,24 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         {
             let f = frame_at(p.x);
             let grab = app.frame_sel.filter(|s| s.contains(&layers, i, f) && s.has_keys(&layers));
+            // A motion tween span is picked whole by a press, as in Animate, and drags away
+            // whole (Ctrl starts a frame selection inside it instead).
+            let span = whole_motion_span(layer, f).filter(|_| grab.is_none() && !ui.input(|inp| inp.modifiers.command));
             if grab.is_some() {
                 app.tl_drag = TlDrag::Move { grab: f, by: 0, grab_row: i, rows_by: 0 };
+            } else if let Some(sel) = span {
+                app.frame_sel = Some(sel);
+                app.tl_drag = TlDrag::Move { grab: f, by: 0, grab_row: i, rows_by: 0 };
+                select_here(app, f);
             } else {
                 app.frame_sel = Some(FrameSel::cell(layer.id, f));
                 app.tl_drag = TlDrag::Select;
                 select_here(app, f);
+                // A drag that starts on a keyframe nobody selected selects frames, as in
+                // Animate. Someone who meant to move the keyframe reads how (#344).
+                if layer.keyframe_starting_at(f).is_some() {
+                    app.status_ok(tr!("Dragging selects frames. To move a keyframe, click it first, then drag it."));
+                }
             }
         }
         if cr.dragged()
@@ -940,13 +1306,20 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             }
         }
         if cr.drag_stopped()
-            && let TlDrag::Span { layer: lid, start: _, end, to } = app.tl_drag
+            && let TlDrag::Span { layer: lid, start, end, to } = app.tl_drag
         {
-            let lid = lid.0;
-            if to > end {
-                app.request("timeline.insert_frame", json!({"layer": lid, "frame": end - 1, "count": to - end}));
-            } else if to < end {
-                app.request("timeline.remove_frame", json!({"layer": lid, "frame": to, "count": end - to}));
+            // One step: the span's new length, its motion keys stretched in proportion (as
+            // in Animate) unless Shift is held; later frames move with the end (ADR 0083).
+            let keep = ui.input(|i| i.modifiers.shift);
+            if to != end
+                && let Some(v) = app.run("timeline.resize_span", json!({"layer": lid.0, "frame": start, "frames": to - start, "scale_keys": !keep}))
+            {
+                let n = to - start;
+                app.status_ok(if v["scaled"] == json!(true) {
+                    trn!("Stretched the tween to {n} frame, its keys in proportion — {undo} to undo", "Stretched the tween to {n} frames, its keys in proportion — {undo} to undo", n, undo = app.undo_key())
+                } else {
+                    trn!("The span is {n} frame long — {undo} to undo", "The span is {n} frames long — {undo} to undo", n, undo = app.undo_key())
+                });
             }
             app.tl_drag = TlDrag::None;
         }
@@ -956,7 +1329,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             {
                 let (f0, f1) = sel.frames();
                 let ids: Vec<u64> = sel.layers(&layers).iter().map(|l| l.0).collect();
-                if app.run("timeline.move_keyframes", json!({"layers": ids, "from": f0, "to": f1, "by": by, "layer_by": rows_by})).is_some() {
+                // Whole tween spans move whole, keeping their lengths; Alt-drag copies (ADR 0083).
+                let copy = ui.input(|inp| inp.modifiers.alt);
+                let (id, params) = if copy || sel.is_whole_tweens(&layers) {
+                    ("timeline.move_spans", json!({"layers": ids, "from": f0, "to": f1, "by": by, "layer_by": rows_by, "copy": copy}))
+                } else {
+                    ("timeline.move_keyframes", json!({"layers": ids, "from": f0, "to": f1, "by": by, "layer_by": rows_by}))
+                };
+                if app.run(id, params).is_some() {
                     // The selection follows the frames: shifted in time and onto the target rows.
                     let shift_by = |f: u32| (i64::from(f) + by).max(0) as u32;
                     let row_of = |id: LayerId| layers.iter().position(|l| l.id == id).and_then(|r| layers.get((r as i64 + rows_by).max(0) as usize)).map_or(id, |l| l.id);
@@ -965,6 +1345,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     // One sentence per direction; the frame count is a phrase of its own.
                     let frames = trn!("{n} frame", "{n} frames", n);
                     app.status_ok(match rows_by {
+                        _ if copy => trn!("Copied {n} frame — {undo} to undo", "Copied {n} frames — {undo} to undo", n, undo = app.undo_key()),
                         0 => trn!("Moved {n} frame by {by} — {undo} to undo", "Moved {n} frames by {by} — {undo} to undo", n, by = format!("{by:+}"), undo = app.undo_key()),
                         r if r < 0 => trn!("Moved {frames} {n} layer up — {undo} to undo", "Moved {frames} {n} layers up — {undo} to undo", r.unsigned_abs(), frames = frames, undo = app.undo_key()),
                         r => trn!("Moved {frames} {n} layer down — {undo} to undo", "Moved {frames} {n} layers down — {undo} to undo", r.unsigned_abs(), frames = frames, undo = app.undo_key()),
@@ -984,9 +1365,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             && let Some(p) = cr.interact_pointer_pos()
         {
             let f = frame_at(p.x);
+            let ctrl = ui.input(|inp| inp.modifiers.command);
             match app.frame_sel.as_mut() {
                 Some(sel) if shift => sel.head = (layer.id, f),
-                _ => app.frame_sel = Some(FrameSel::cell(layer.id, f)),
+                // A click on a motion tween picks the whole span (Ctrl-click: one frame).
+                _ => app.frame_sel = Some(whole_motion_span(layer, f).filter(|_| !ctrl).unwrap_or(FrameSel::cell(layer.id, f))),
             }
             select_here(app, f);
         }
@@ -1016,27 +1399,39 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             let here = app.s.active_layer().and_then(|l| l.keyframe_at(app.s.frame));
             if here.is_some_and(|k| k.motion.is_some()) {
                 if ui.button(tr!("Motion Editor")).clicked() {
-                    app.bottom = BottomTab::MotionEditor;
+                    app.show_panel(crate::dock::Panel::MotionEditor);
                     ui.close();
                 }
                 menus::cmd_item(app, ui, "timeline.create_tween");
                 menus::cmd_item(app, ui, "timeline.remove_tween");
+                ui.separator();
+                let (split, join) = motion_cuts(app);
+                if ui.add_enabled(split, egui::Button::new(tr!("Split Motion"))).clicked() {
+                    split_motion(app);
+                    ui.close();
+                }
+                if ui.add_enabled(join.is_some(), egui::Button::new(tr!("Join Motion"))).clicked() {
+                    join_motion(app, join);
+                    ui.close();
+                }
                 return;
             }
-            let tween = here.and_then(|k| k.tween);
+            let tween = here.and_then(|k| k.tween.clone());
             match tween {
                 Some(t) => {
                     menus::cmd_item(app, ui, "timeline.create_motion_tween");
                     menus::cmd_item(app, ui, if t.kind == TweenKind::Shape { "timeline.create_tween" } else { "timeline.create_shape_tween" });
                     menus::cmd_item(app, ui, "timeline.remove_tween");
-                    ui.menu_button(tr!("Ease"), |ui| {
-                        for (name, e) in Easing::PRESETS {
-                            if ui.selectable_label(t.easing == e, crate::i18n::t(name)).clicked() {
-                                app.run("timeline.set_easing", json!({"easing": easing_param(e)}));
-                                ui.close();
-                            }
-                        }
-                    });
+                    ui.separator();
+                    // Eases (ADR 0081): the window, and an ease carried from one tween to another.
+                    if ui.button(tr!("Edit Ease…")).clicked() {
+                        crate::ease_editor::open_here(app);
+                        ui.close();
+                    }
+                    menus::cmd_item(app, ui, "ease.copy");
+                    if app.s.ease_clipboard.is_some() {
+                        menus::cmd_item(app, ui, "ease.paste");
+                    }
                 }
                 None => {
                     menus::cmd_item(app, ui, "timeline.create_motion_tween");
@@ -1047,6 +1442,121 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         });
         painter.line_segment([row.left_bottom(), row.right_bottom()], Stroke::new(1.0, T.separator));
     }
+    // The parenting view's tree, and a dot being dragged to its new parent (ADR 0113).
+    if parent_col.is_some() {
+        let list = Rect::from_min_max(pos2(body.left(), rows_top), pos2(grid.left(), rows_bottom));
+        crate::parenting::finish(app, ui, &painter, &tl_now, &parent_dots, &drop_rows, list);
+    } else {
+        app.tl_parent_drag = None;
+    }
+    app.tl_parent_dots = parent_dots;
+    // A layer dragged by its name (#407): a line shows where it will land, a folder lights up
+    // when it goes inside. Released there it moves in one undo step; Esc, or a release away
+    // from the layers, leaves it where it was.
+    if let Some(dragged) = app.tl_layer_drag {
+        let (pointer, down, cancel) = ui.input(|i| (i.pointer.latest_pos(), i.pointer.primary_down(), i.key_pressed(egui::Key::Escape)));
+        let index_of = |id: LayerId| tl_now.layers.iter().position(|l| l.id == id);
+        let targets: Vec<DropRow> = drop_rows
+            .iter()
+            .enumerate()
+            .filter_map(|(n, (rect, id))| {
+                let i = index_of(*id)?;
+                let next = drop_rows.get(n + 1).map(|(_, c)| *c);
+                Some(DropRow {
+                    top: rect.top(),
+                    bottom: rect.bottom(),
+                    id: *id,
+                    folder: tl_now.layers.get(i).is_some_and(|l| l.kind == LayerKind::Folder),
+                    first_child: next.filter(|c| index_of(*c).is_some_and(|ci| tl_now.is_inside(ci, *id))),
+                    dragged: *id == dragged || tl_now.is_inside(i, dragged),
+                })
+            })
+            .collect();
+        let over = pointer.filter(|p| p.x >= body.left() && p.x < grid.left() && p.y >= ruler.top() && p.y <= body.bottom());
+        let target = over.and_then(|p| layer_drop(&targets, p.y));
+        if cancel || index_of(dragged).is_none() {
+            app.tl_layer_drag = None;
+        } else if !down {
+            app.tl_layer_drag = None;
+            if let Some(t) = target {
+                app.run("layer.move", t.params(dragged));
+            }
+        } else {
+            ui.ctx().set_cursor_icon(if target.is_some() { egui::CursorIcon::Grabbing } else { egui::CursorIcon::NoDrop });
+            let row_of = |id: LayerId| targets.iter().find(|r| r.id == id);
+            let indent = |id: LayerId| body.left() + 8.0 + index_of(id).map_or(0, |i| tl_now.depth(i)) as f32 * INDENT;
+            let line = |x: f32, y: f32| {
+                let y = y.clamp(rows_top + 1.0, rows_bottom - 1.0);
+                painter.circle_filled(pos2(x, y), 3.0, T.accent);
+                painter.line_segment([pos2(x, y), pos2(grid.left(), y)], Stroke::new(2.0, T.accent));
+            };
+            match target {
+                Some(LayerDrop::Before(id)) => {
+                    if let Some(r) = row_of(id) {
+                        line(indent(id), r.top);
+                    }
+                }
+                Some(LayerDrop::After(id)) => {
+                    if let Some(r) = row_of(id) {
+                        line(indent(id), r.bottom);
+                    }
+                }
+                Some(LayerDrop::Into(id)) => {
+                    if let Some(r) = row_of(id) {
+                        painter.rect_stroke(Rect::from_min_max(pos2(body.left(), r.top), pos2(grid.left(), r.bottom)), 0.0, Stroke::new(2.0, T.accent), StrokeKind::Inside);
+                    }
+                }
+                None => {}
+            }
+            // Near the top or bottom edge the list scrolls, so any row can be reached.
+            if let Some(p) = over {
+                let edge = base_h * 0.5;
+                if p.y < rows_top + edge {
+                    app.tl_vscroll = (app.tl_vscroll - 0.15).max(0.0);
+                } else if p.y > rows_bottom - edge {
+                    app.tl_vscroll += 0.15;
+                }
+            }
+            ui.ctx().request_repaint();
+        }
+    }
+
+    // The line between the layers and the frames drags (#384): narrower gives the frames more
+    // room, as in Animate; a double-click puts it back. Kept in the preferences.
+    {
+        let split = Rect::from_min_max(pos2(grid.left() - 2.0, body.top()), pos2(grid.left() + 3.0, rows_bottom));
+        let sid = ui.id().with("layer_column_split");
+        let sr = ui.interact(split, sid, Sense::click_and_drag());
+        ui.ctx().accesskit_node_builder(sid, |node| {
+            node.set_role(egui::accesskit::Role::Splitter);
+            node.set_label(tr!("Resize the layer names and the frames"));
+        });
+        if (sr.hovered() || sr.dragged()) && app.tl_layer_drag.is_none() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+            painter.rect_filled(Rect::from_center_size(pos2(grid.left(), split.center().y), vec2(2.0, split.height())), 0.0, T.accent);
+        }
+        let range = crate::prefs::LAYER_W_RANGE;
+        if sr.dragged()
+            && let Some(p) = sr.interact_pointer_pos()
+        {
+            app.tl_layer_w_drag = Some((p.x - body.left() - parent_w).clamp(*range.start(), *range.end()));
+        }
+        let set = if sr.double_clicked() {
+            app.tl_layer_w_drag = None;
+            Some(crate::prefs::LAYER_W_DEFAULT)
+        } else if sr.drag_stopped() {
+            app.tl_layer_w_drag.take()
+        } else {
+            None
+        };
+        if let Some(w) = set.filter(|w| (*w - app.prefs.timeline_layer_w).abs() > 0.01) {
+            let mut p = app.prefs.clone();
+            p.timeline_layer_w = w;
+            let ctx = ui.ctx().clone();
+            app.set_prefs(&ctx, p);
+        }
+    }
+
     // Layout lines: layer list | frame grid, and the header above.
     painter.line_segment([pos2(grid.left(), body.top()), pos2(grid.left(), body.bottom())], Stroke::new(1.0, T.border));
     painter.line_segment([body.left_top(), body.right_top()], Stroke::new(1.0, T.border));
@@ -1090,31 +1600,43 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     {
         painter.rect_filled(footer, 0.0, T.panel_alt);
         painter.line_segment([footer.left_top(), footer.right_top()], Stroke::new(1.0, T.border));
-        // New folder, Up and Down as icon buttons, laid out first from the right edge so they
-        // always show; the text buttons share what is left, shortened if a language makes them
-        // long (pseudo-locale screenshots lost the Down chevron off the column's edge).
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(footer.shrink2(vec2(8.0, 4.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
-        for (icon, id, tip) in [
-            (Icon::ChevronDown, "layer.move_down", tr!("Move layer down")),
-            (Icon::ChevronUp, "layer.move_up", tr!("Move layer up")),
-            (Icon::FolderPlus, "layer.new_folder", tr!("New folder above the active layer (move layers in under it with Up and Down)")),
-        ] {
-            let (r, resp) = child.allocate_exact_size(vec2(TARGET, TARGET), Sense::click());
-            if resp.hovered() {
-                child.painter().rect_filled(r, T.rc(), T.hover);
+        // Icon buttons only (as the timeline header since #256), so they fit the layer column
+        // at any size and in any language: New Layer and Delete on the left as in Animate, New
+        // Folder, Up and Down on the right. Each is named by its tooltip for screen readers.
+        let footer_button = |ui: &mut egui::Ui, icon: Icon, tip: &str, enabled: bool| -> bool {
+            let (r, resp) = ui.allocate_exact_size(vec2(TARGET, TARGET), if enabled { Sense::click() } else { Sense::hover() });
+            if enabled && resp.hovered() {
+                ui.painter().rect_filled(r, T.rc(), T.hover);
             }
-            icons::paint(child.painter(), Rect::from_center_size(r.center(), vec2(16.0, 16.0)), icon, if resp.hovered() { T.icon_hot } else { T.icon });
-            a11y::control(&child, &resp, WidgetType::Button, tip, None);
-            if resp.on_hover_text(tip).clicked() {
-                app.run(id, json!({}));
-            }
+            let colour = if !enabled {
+                T.text_faint
+            } else if resp.hovered() {
+                T.icon_hot
+            } else {
+                T.icon
+            };
+            icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(16.0, 16.0)), icon, colour);
+            a11y::control(ui, &resp, WidgetType::Button, tip, None);
+            resp.on_hover_text(tip).clicked()
+        };
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(footer.shrink2(vec2(6.0, 4.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        child.spacing_mut().item_spacing.x = 2.0;
+        if footer_button(&mut child, Icon::Plus, tr!("New layer"), true) {
+            app.run("layer.new", json!({}));
         }
-        child.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            if ui.add(egui::Button::new(tr!("+ Layer")).truncate()).named(tr!("New layer")).on_hover_text(tr!("New layer")).clicked() {
-                app.run("layer.new", json!({}));
-            }
-            if ui.add_enabled(layers.len() > 1, egui::Button::new(tr!("Delete")).truncate()).named(tr!("Delete layer")).on_hover_text(tr!("Delete the active layer")).clicked() {
-                app.request("layer.delete", json!({}));
+        if footer_button(&mut child, Icon::Trash, tr!("Delete layer"), layers.len() > 1) {
+            app.request("layer.delete", json!({}));
+        }
+        child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for (icon, id, tip) in [
+                (Icon::ChevronDown, "layer.move_down", tr!("Move layer down")),
+                (Icon::ChevronUp, "layer.move_up", tr!("Move layer up")),
+                (Icon::FolderPlus, "layer.new_folder", tr!("New folder above the active layer (move layers in under it with Up and Down)")),
+            ] {
+                if footer_button(ui, icon, tip, true) {
+                    app.run(id, json!({}));
+                }
             }
         });
     }
@@ -1274,7 +1796,7 @@ pub fn span_text(k: &anicraft_engine::doc::Keyframe, next_adjacent: bool) -> Str
     let mut parts: Vec<String> = vec![if k.elements.is_empty() { tr!("blank keyframe").to_string() } else { tr!("keyframe").to_string() }];
     if k.motion.is_some() {
         parts.push(tr!("motion tween").to_string());
-    } else if let Some(t) = k.tween {
+    } else if let Some(t) = &k.tween {
         parts.push(match (t.kind, next_adjacent) {
             (_, false) => tr!("broken tween").to_string(),
             (TweenKind::Shape, true) => tr!("shape tween").to_string(),
@@ -1412,28 +1934,7 @@ pub fn button_states(app: &App) -> Option<[&'static str; 4]> {
     (open.kind == anicraft_engine::doc::SymbolKind::Button).then(|| [trc!("button state", "Up"), trc!("button state", "Over"), trc!("button state", "Down"), trc!("button state", "Hit")])
 }
 
-pub fn easing_label(e: &Easing) -> String {
-    match e {
-        Easing::Classic(s) => tr!("Classic {strength}", strength = format!("{s:+.0}")),
-        other => crate::i18n::t_dyn(&other.label()).into_owned(),
-    }
-}
-
-pub fn easing_param(e: Easing) -> serde_json::Value {
-    match e {
-        Easing::Linear => json!("Linear"),
-        Easing::QuadIn => json!("QuadIn"),
-        Easing::QuadOut => json!("QuadOut"),
-        Easing::QuadInOut => json!("QuadInOut"),
-        Easing::CubicIn => json!("CubicIn"),
-        Easing::CubicOut => json!("CubicOut"),
-        Easing::CubicInOut => json!("CubicInOut"),
-        Easing::Classic(s) => json!({"classic": s}),
-        Easing::CubicBezier(a, b, c, d) => json!({"bezier": [a, b, c, d]}),
-    }
-}
-
-/// The timeline header, left to right: tabs, transport, readouts, frame and tween buttons.
+/// The timeline header, left to right: transport, readouts, frame and tween buttons.
 /// The frame rate as the header shows it: whole rates without decimals ("24 fps"), others
 /// with as many as they need ("29.97 fps", "12.5 fps").
 fn fps_label(fps: f32) -> String {
@@ -1442,19 +1943,7 @@ fn fps_label(fps: f32) -> String {
     format!("{s} fps")
 }
 
-fn header(app: &mut App, ui: &mut egui::Ui, dock: Rect) {
-    // Two tabs share the dock: the timeline and the Motion Editor.
-    for (tab, name, tip) in [(BottomTab::Timeline, tr!("Timeline"), tr!("Layers and frames")), (BottomTab::MotionEditor, tr!("Motion Editor"), tr!("Property curves of the motion tween at the playhead (double-click a motion span)"))] {
-        let r = ui.selectable_label(app.bottom == tab, text(Type::Heading, name));
-        // With the Motion Editor up, Ctrl+F6 lands on its tab (the layer rows are hidden).
-        if tab == BottomTab::MotionEditor && app.bottom == tab {
-            a11y::anchor(ui, a11y::Region::Timeline, dock, &r);
-        }
-        if r.on_hover_text(tip).clicked() {
-            app.bottom = tab;
-        }
-    }
-    ui.add_space(4.0);
+fn header(app: &mut App, ui: &mut egui::Ui) {
     transport(app, ui);
     ui.add_space(4.0);
     let fps = app.s.doc.stage.fps;
@@ -1465,22 +1954,29 @@ fn header(app: &mut App, ui: &mut egui::Ui, dock: Rect) {
     ui.label(text(Type::Data, fps_label(fps)).color(T.text_dim)).on_hover_text(tr!("Frame rate"));
     ui.label(text(Type::Data, format!("{:>6.2} s", f as f32 / fps.max(1.0))).color(T.text_dim)).on_hover_text(tr!("Time at the playhead"));
     ui.separator();
-    // Through `invoke`, so the buttons act on the frame selection like the keys do.
-    let cmd = |app: &mut App, ui: &mut egui::Ui, label: &str, tip: &str, id: &'static str| {
-        if ui.button(label).named(tip).on_hover_text(tip).clicked() {
+    // Through `invoke`, so the buttons act on the frame selection like the keys do. Icons (the
+    // timeline's own marks, each with a plus) keep the header narrow; the name and the key
+    // stay in the tooltip and the accessible name (#240).
+    for (id, name, icon) in [
+        ("timeline.insert_frame", tr!("Insert frame"), Icon::InsertFrame),
+        ("timeline.insert_keyframe", tr!("Insert keyframe"), Icon::InsertKeyframe),
+        ("timeline.insert_blank_keyframe", tr!("Insert blank keyframe"), Icon::InsertBlankKeyframe),
+    ] {
+        let tip = match app.keymap.primary(id).map(crate::platform::shortcut_label) {
+            Some(k) => format!("{name} ({k})"),
+            None => name.to_string(),
+        };
+        if icon_button(ui, &tip, None, icon).clicked() {
             app.invoke(id);
         }
-    };
-    cmd(app, ui, tr!("Frame"), tr!("Insert frame (F5)"), "timeline.insert_frame");
-    cmd(app, ui, tr!("Keyframe"), tr!("Insert keyframe (F6)"), "timeline.insert_keyframe");
-    cmd(app, ui, tr!("Blank"), tr!("Insert blank keyframe (F7)"), "timeline.insert_blank_keyframe");
+    }
     let here = app.s.active_layer().and_then(|l| l.keyframe_at(app.s.frame));
-    let in_tween = here.and_then(|k| k.tween);
+    let in_tween = here.and_then(|k| k.tween.clone());
     let in_motion = here.is_some_and(|k| k.motion.is_some());
     if in_motion {
         egui::ComboBox::from_id_salt("tl_kind").width(120.0).selected_text(tr!("Motion tween")).show_ui(ui, |ui| {
             if ui.selectable_label(false, tr!("Motion Editor")).on_hover_text(tr!("Edit the property curves")).clicked() {
-                app.bottom = BottomTab::MotionEditor;
+                app.show_panel(crate::dock::Panel::MotionEditor);
             }
             ui.separator();
             if ui.selectable_label(false, tr!("Classic tween")).on_hover_text(tr!("Tween to the next keyframe instead")).clicked() {
@@ -1495,15 +1991,13 @@ fn header(app: &mut App, ui: &mut egui::Ui, dock: Rect) {
     }
     match in_tween.filter(|_| !in_motion) {
         Some(tw) => {
-            egui::ComboBox::from_id_salt("tl_ease").width(112.0).selected_text(easing_label(&tw.easing)).show_ui(ui, |ui| {
-                for (name, e) in Easing::PRESETS {
-                    if ui.selectable_label(tw.easing == e, crate::i18n::t(name)).clicked() {
-                        app.run("timeline.set_easing", json!({"easing": easing_param(e)}));
-                    }
+            match crate::ease_editor::picker(app, ui, "tl_ease", &tw.easing, 112.0, tr!("Easing")) {
+                Some(crate::ease_editor::Picked::Ease(e)) => {
+                    app.run("timeline.set_easing", json!({"easing": e}));
                 }
-            })
-            .response
-            .set_name(tr!("Easing"));
+                Some(crate::ease_editor::Picked::Edit) => crate::ease_editor::open_here(app),
+                None => {}
+            }
             // The tween's kind: classic ⇄ shape (keeping the easing), or none.
             let shape = tw.kind == TweenKind::Shape;
             egui::ComboBox::from_id_salt("tl_kind").width(104.0).selected_text(if shape { tr!("Shape tween") } else { tr!("Classic tween") }).show_ui(ui, |ui| {
@@ -1644,6 +2138,49 @@ mod tests {
         }
     }
 
+    fn spans(app: &App, l: LayerId) -> Vec<(u32, u32)> {
+        app.s.timeline().layer(l).map(|l| l.keyframes.iter().map(|k| (k.start, k.duration)).collect()).unwrap_or_default()
+    }
+
+    #[test]
+    fn f5_f6_f7_from_the_editor_extend_at_the_playhead_and_move_on() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_context(&ctx, anicraft_engine::Session::default(), Some(std::path::PathBuf::from("unused.png")));
+        let a = app.s.layer;
+        app.run("timeline.insert_frame", json!({"layer": a.0, "frame": 0, "count": 7}));
+        let b = LayerId(app.run("layer.new", json!({})).and_then(|v| v["layer"].as_u64()).unwrap_or(0));
+        app.run("timeline.remove_frame", json!({"layer": b.0, "frame": 0, "count": 4}));
+        assert_eq!((spans(&app, a), spans(&app, b)), (vec![(0, 8)], vec![(0, 4)]));
+        // No frame selection, playhead at frame 5: F5 extends layer 1 only, and moves on.
+        app.frame_sel = None;
+        app.s.set_frame(4);
+        app.invoke("timeline.insert_frame");
+        assert_eq!((spans(&app, a), spans(&app, b)), (vec![(0, 9)], vec![(0, 4)]));
+        assert_eq!(app.s.frame, 5);
+        // A clicked cell: F5 there is for that layer, and the cell follows the playhead.
+        app.frame_sel = Some(FrameSel::cell(b, 3));
+        app.s.set_frame(3);
+        app.invoke("timeline.insert_frame");
+        assert_eq!(spans(&app, b), vec![(0, 5)]);
+        assert_eq!(app.s.frame, 4);
+        assert_eq!(app.frame_sel.map(|s| s.frames()), Some((4, 4)));
+        // F6 on a keyframe: the next frame gets the key, the playhead and the cell go there.
+        app.frame_sel = Some(FrameSel::cell(b, 0));
+        app.s.set_frame(0);
+        app.invoke("timeline.insert_keyframe");
+        assert_eq!(spans(&app, b), vec![(0, 1), (1, 4)]);
+        assert_eq!((app.s.frame, app.frame_sel.map(|s| s.frames())), (1, Some((1, 1))));
+        app.invoke("timeline.insert_blank_keyframe");
+        assert_eq!(spans(&app, b), vec![(0, 1), (1, 1), (2, 3)]);
+        assert_eq!(app.s.frame, 2);
+        // A selection of several frames stays a range edit and doesn't move the playhead.
+        app.frame_sel = Some(FrameSel { anchor: (a, 1), head: (a, 2) });
+        app.s.set_frame(1);
+        app.invoke("timeline.insert_frame");
+        assert_eq!(spans(&app, a), vec![(0, 11)]);
+        assert_eq!(app.s.frame, 1);
+    }
+
     #[test]
     fn a_selection_spans_rows_and_frames_in_either_direction() {
         let ls = layers(4);
@@ -1658,5 +2195,113 @@ mod tests {
         assert!(FrameSel::cell(LayerId(1), 0).has_keys(&ls));
         // A deleted layer invalidates the selection.
         assert!(FrameSel { anchor: (LayerId(9), 0), head: (LayerId(1), 0) }.layers(&ls).is_empty());
+    }
+
+    use egui::{Event, Modifiers, PointerButton, Pos2};
+
+    /// One frame of the whole app with these events; the cursor it asked for.
+    fn frame(ctx: &egui::Context, app: &mut App, events: Vec<Event>, modifiers: Modifiers) -> egui::CursorIcon {
+        let mut all = vec![Event::ModifiersChanged(modifiers)];
+        all.extend(events);
+        let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1600.0, 940.0))), events: all, ..Default::default() };
+        let mut out = ctx.run_ui(input, |ui| app.frame(ui));
+        out.textures_delta.clear();
+        out.platform_output.cursor_icon
+    }
+    fn settle(ctx: &egui::Context, app: &mut App) {
+        for _ in 0..3 {
+            frame(ctx, app, Vec::new(), Modifiers::NONE);
+        }
+    }
+    fn button(pos: Pos2, pressed: bool, modifiers: Modifiers) -> Event {
+        Event::PointerButton { pos, button: PointerButton::Primary, pressed, modifiers }
+    }
+    fn drag(ctx: &egui::Context, app: &mut App, from: Pos2, to: Pos2, modifiers: Modifiers) {
+        frame(ctx, app, vec![Event::PointerMoved(from)], modifiers);
+        frame(ctx, app, vec![button(from, true, modifiers)], modifiers);
+        for i in 1..=10 {
+            frame(ctx, app, vec![Event::PointerMoved(from + (to - from) * (i as f32 / 10.0))], modifiers);
+        }
+        frame(ctx, app, vec![button(to, false, modifiers)], modifiers);
+        settle(ctx, app);
+    }
+    fn click(ctx: &egui::Context, app: &mut App, at: Pos2, modifiers: Modifiers) {
+        frame(ctx, app, vec![Event::PointerMoved(at)], modifiers);
+        frame(ctx, app, vec![button(at, true, modifiers)], modifiers);
+        frame(ctx, app, vec![button(at, false, modifiers)], modifiers);
+        settle(ctx, app);
+    }
+
+    /// #344: a keyframe moves the way it does in Animate: click it, then drag it. The hand
+    /// cursor over selected keyframes says it can be dragged; a drag that starts on a keyframe
+    /// nobody selected still selects a range of frames, and says how to move one.
+    #[test]
+    fn a_selected_keyframe_shows_the_hand_and_drags_away() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_context(&ctx, anicraft_engine::Session::default(), Some(std::path::PathBuf::from("unused.png")));
+        app.show_panel(crate::dock::Panel::Timeline);
+        let layer = app.s.layer;
+        app.run("timeline.insert_frame", json!({"layer": layer.0, "frame": 0, "count": 11}));
+        app.run("timeline.insert_keyframe", json!({"layer": layer.0, "frame": 3}));
+        app.s.set_frame(0);
+        settle(&ctx, &mut app);
+        let Some((cells, x0, cell_w, scroll)) = ctx.data(|d| d.get_temp::<(egui::Rect, f32, f32, f32)>(egui::Id::new("tl_geometry"))) else { panic!("the timeline drew") };
+        let at = |f: u32| pos2(x0 + (f as f32 - scroll) * cell_w + cell_w * 0.5, cells.center().y);
+        let starts = |app: &App| app.s.active_layer().map(|l| l.keyframes.iter().map(|k| k.start).collect::<Vec<_>>()).unwrap_or_default();
+        assert_eq!(starts(&app), vec![0, 3]);
+
+        // Nothing selected: a press and drag on the keyframe selects frames 3..=6, moves nothing.
+        assert_ne!(frame(&ctx, &mut app, vec![Event::PointerMoved(at(3))], Modifiers::NONE), egui::CursorIcon::Grab);
+        drag(&ctx, &mut app, at(3), at(6), Modifiers::NONE);
+        assert_eq!(starts(&app), vec![0, 3], "a first drag selects, as in Animate");
+        assert_eq!(app.frame_sel.map(|s| s.frames()), Some((3, 6)));
+        assert!(app.status.as_ref().is_some_and(|s| !s.error && s.text.contains("click it first")), "the hint: {:?}", app.status.as_ref().map(|s| &s.text));
+
+        // Click the keyframe: it is selected, and the hand shows over it (not over other frames).
+        click(&ctx, &mut app, at(3), Modifiers::NONE);
+        assert_eq!(app.frame_sel.map(|s| s.frames()), Some((3, 3)));
+        assert_eq!(frame(&ctx, &mut app, vec![Event::PointerMoved(at(3))], Modifiers::NONE), egui::CursorIcon::Grab);
+        assert_ne!(frame(&ctx, &mut app, vec![Event::PointerMoved(at(5))], Modifiers::NONE), egui::CursorIcon::Grab);
+
+        // Drag it: the keyframe moves to frame 7 and stays selected, in one undo step.
+        frame(&ctx, &mut app, vec![Event::PointerMoved(at(3))], Modifiers::NONE);
+        frame(&ctx, &mut app, vec![button(at(3), true, Modifiers::NONE)], Modifiers::NONE);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(at(5))], Modifiers::NONE);
+        assert_eq!(frame(&ctx, &mut app, vec![Event::PointerMoved(at(7))], Modifiers::NONE), egui::CursorIcon::Grabbing);
+        frame(&ctx, &mut app, vec![button(at(7), false, Modifiers::NONE)], Modifiers::NONE);
+        settle(&ctx, &mut app);
+        assert_eq!(starts(&app), vec![0, 7]);
+        assert_eq!(app.frame_sel.map(|s| s.frames()), Some((7, 7)));
+        app.run("edit.undo", json!({}));
+        assert_eq!(starts(&app), vec![0, 3]);
+    }
+
+    #[test]
+    fn the_ruler_playhead_stops_at_the_last_frame_with_material() {
+        assert_eq!(playhead_target(26, 8), 7);
+        assert_eq!(playhead_target(3, 8), 3);
+        assert_eq!(playhead_target(0, 0), 0);
+        let ctx = egui::Context::default();
+        let mut app = App::with_context(&ctx, anicraft_engine::Session::default(), Some(std::path::PathBuf::from("unused.png")));
+        app.show_panel(crate::dock::Panel::Timeline);
+        let layer = app.s.layer;
+        app.run("timeline.insert_frame", json!({"layer": layer.0, "frame": 0, "count": 7}));
+        app.s.set_frame(0);
+        settle(&ctx, &mut app);
+        assert_eq!(app.s.frame_count(), 8);
+        // Where the active row's frames are drawn, as the timeline drew them.
+        let row = ctx.data(|d| d.get_temp::<(egui::Rect, f32, f32, f32)>(egui::Id::new("tl_geometry")));
+        let Some((cells, x0, cell_w, scroll)) = row else { panic!("the timeline drew") };
+        // The ruler sits directly above the cells; the frame's column is its centre.
+        let y = cells.top() - RULER_H / 2.0;
+        let x = |f: u32| x0 + (f as f32 - scroll) * cell_w + cell_w * 0.5;
+        // Dragging past the material stops at the last frame that has it (#352).
+        drag(&ctx, &mut app, pos2(x(2), y), pos2(x(26), y), Modifiers::NONE);
+        assert_eq!(app.s.frame, 7);
+        // A click past the end clamps too, while a drag inside still moves freely.
+        drag(&ctx, &mut app, pos2(x(7), y), pos2(x(3), y), Modifiers::NONE);
+        assert_eq!(app.s.frame, 3);
+        click(&ctx, &mut app, pos2(x(12), y), Modifiers::NONE);
+        assert_eq!(app.s.frame, 7);
     }
 }

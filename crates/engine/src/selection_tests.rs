@@ -375,6 +375,41 @@ fn break_apart_works_on_each_layer() {
     assert_eq!(s.selected_layers(), vec![top, bottom]);
 }
 
+/// #253: a drawing object (Object Drawing) breaks apart into raw shapes that merge with the raw
+/// drawing they touch, so it can be edited as a merged shape again; one undo step brings the
+/// object back.
+#[test]
+fn break_apart_turns_a_drawing_object_into_raw_shapes() {
+    let mut s = Session::default();
+    s.style.object_drawing = false;
+    run(&mut s, "draw.rect", json!({"x": 0, "y": 0, "w": 100, "h": 100, "fill": "#00ff00", "stroke": null}));
+    let raw = s.visible_elements().len();
+    let obj = el_id(&run(&mut s, "draw.rect", json!({"x": 50, "y": 50, "w": 100, "h": 100, "fill": "#ff0000", "stroke": null, "object": true})));
+    let squiggle = el_id(&run(&mut s, "draw.freehand", json!({"points": [[300, 0], [320, 30], [340, 0], [360, 30]], "object": true})));
+    let shapes = |s: &Session| -> Vec<(ElementId, bool)> {
+        s.visible_elements().iter().filter_map(|e| match &e.kind {
+            ElementKind::Shape(sh) => Some((e.id, sh.merge)),
+            _ => None,
+        }).collect()
+    };
+    assert!(shapes(&s).iter().filter(|(id, _)| [obj, squiggle].contains(id)).all(|(_, m)| !m), "drawn as objects");
+    let before = s.doc.clone();
+    let steps = s.history_len();
+    run(&mut s, "element.select", json!({"ids": [obj.0, squiggle.0]}));
+    let v = run(&mut s, "modify.break_apart", json!({}));
+    assert!(v["created"].as_u64().unwrap() >= 2, "{v}");
+    assert!(shapes(&s).iter().all(|(_, m)| *m), "every shape is raw now: {:?}", shapes(&s));
+    assert!(!shapes(&s).iter().any(|(id, _)| *id == obj), "the object merged into the drawing");
+    assert!(s.visible_elements().len() > raw + 1, "the red square cut the green one");
+    assert!(!s.selection.is_empty(), "what came out of it is selected");
+    assert_eq!(s.history_len(), steps + 1);
+    s.undo().unwrap();
+    assert!(s.doc == before, "one undo brings the objects back");
+    // Nothing to break apart: an error, not a no-op step.
+    run(&mut s, "edit.deselect", json!({}));
+    assert!(s.execute("modify.break_apart", &json!({})).is_err());
+}
+
 // ----- the marquee across layers with raw parts (ADR 0041) ------------------------------------
 
 /// Raw squares on two layers: Top's 0..100, Bottom's 200..300 (both 0..100 high).
@@ -572,4 +607,54 @@ fn select_with_toggle_takes_one_out_and_puts_it_back_across_layers() {
     run(&mut s, "element.select", json!({"ids": [b.0], "toggle": true}));
     assert!(s.selection.contains(top, a) && s.selection.contains(bottom, b));
     assert!(s.execute("element.select", &json!({"ids": [b.0], "toggle": "yes"})).is_err(), "toggle is a bool");
+}
+
+/// #341: Break Apart on an imported image turns it into a raw shape filled with the image (as
+/// in Animate), so it can be cut, erased and merged like any drawing. In 0.2.1 the command
+/// refused it ("no symbol instances or text to break apart").
+#[test]
+fn break_apart_turns_an_image_into_a_raw_shape_with_a_bitmap_fill() {
+    let mut s = Session::default();
+    let id = anicraft_doc::BitmapId(s.doc.alloc_id());
+    let png = anicraft_render::encode_png(8, 6, &[0, 0, 255, 255].repeat(48)).unwrap();
+    s.doc.bitmaps.push(Arc::new(anicraft_doc::Bitmap::from_png(id, "photo.png", png).unwrap()));
+    run(&mut s, "library.place", json!({"bitmap": id.0, "x": 100, "y": 80}));
+    let image = |s: &Session| -> Vec<bool> {
+        s.visible_elements().iter().filter_map(|e| match &e.kind {
+            ElementKind::Shape(sh) if matches!(sh.fill, Some(anicraft_doc::Paint::Bitmap { bitmap, .. }) if bitmap == id) => Some(sh.merge),
+            _ => None,
+        }).collect()
+    };
+    assert_eq!(image(&s), vec![false], "placed as an object");
+    let before = s.selection_bounds();
+    run(&mut s, "modify.break_apart", json!({}));
+    assert_eq!(image(&s), vec![true], "a raw shape, still filled with the image");
+    let after = s.selection_bounds();
+    assert!((after.min.x - before.min.x).abs() < 0.5 && (after.width() - before.width()).abs() < 0.5 && (after.height() - before.height()).abs() < 0.5, "where it was: {before:?} vs {after:?}");
+    s.undo().unwrap();
+    assert_eq!(image(&s), vec![false], "one undo brings the image object back");
+}
+
+/// #299: Break Apart on text twice. The first makes drawing objects of its letters' outlines,
+/// the second raw shapes (in 0.2.1 the second was refused). A third has nothing left to do and
+/// says so.
+#[test]
+fn break_apart_twice_on_text_ends_in_raw_shapes() {
+    let mut s = Session::default();
+    if s.execute("text.create", &json!({"text": "Hi", "x": 20, "y": 20, "size": 60, "color": "#000000"})).is_err() {
+        return; // no font on this machine
+    }
+    let kinds = |s: &Session| -> Vec<Option<bool>> {
+        let sel = s.selection.id_list();
+        s.visible_elements().iter().filter(|e| sel.contains(&e.id.0)).map(|e| match &e.kind {
+            ElementKind::Shape(sh) => Some(sh.merge),
+            _ => None,
+        }).collect()
+    };
+    run(&mut s, "modify.break_apart", json!({}));
+    assert!(!kinds(&s).is_empty() && kinds(&s).iter().all(|k| *k == Some(false)), "outlines, as drawing objects: {:?}", kinds(&s));
+    run(&mut s, "modify.break_apart", json!({}));
+    assert!(!kinds(&s).is_empty() && kinds(&s).iter().all(|k| *k == Some(true)), "raw shapes: {:?}", kinds(&s));
+    let err = s.execute("modify.break_apart", &json!({})).unwrap_err().to_string();
+    assert!(err.contains("raw shapes already"), "{err}");
 }

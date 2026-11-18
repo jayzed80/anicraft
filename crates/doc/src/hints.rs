@@ -84,7 +84,7 @@ impl Layer {
     /// Whether keyframe `i` starts a shape tween that runs into the next keyframe.
     pub fn is_shape_tween(&self, i: usize) -> bool {
         let (Some(k), Some(next)) = (self.keyframes.get(i), self.keyframes.get(i + 1)) else { return false };
-        k.motion.is_none() && k.tween.is_some_and(|t| t.kind == TweenKind::Shape) && next.start == k.end()
+        k.motion.is_none() && k.tween.as_ref().is_some_and(|t| t.kind == TweenKind::Shape) && next.start == k.end()
     }
 
     /// The shape tween whose hints `frame` shows or edits, and which side: a frame inside a
@@ -149,6 +149,16 @@ pub(crate) fn hint_pairs(kf: &Keyframe, next: &Keyframe) -> Vec<(usize, Vec2, Ve
             let (a, b) = (kf.elements.get(i)?, next.elements.get(i)?);
             Some((i, a.transform.inverse()?.apply(h.start), b.transform.inverse()?.apply(h.end)))
         })
+        .collect()
+}
+
+/// The hints of a shape tween from `kf` to `next` placed on an outline at both ends: the indices
+/// of the elements they are placed on (start, end) and the points in layer space.
+pub(crate) fn placed_hints(kf: &Keyframe, next: &Keyframe) -> Vec<(usize, usize, Vec2, Vec2)> {
+    kf.hints
+        .iter()
+        .take(MAX_SHAPE_HINTS)
+        .filter_map(|h| Some((placed_on(&kf.elements, h.start)?, placed_on(&next.elements, h.end)?, h.start, h.end)))
         .collect()
 }
 

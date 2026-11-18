@@ -9,18 +9,28 @@ use std::sync::Arc;
 pub fn specs() -> Vec<CommandSpec> {
     let c = |id, label, menu, shortcut, params, mutates, run| CommandSpec { id, label, menu, shortcut, params, mutates, run };
     vec![
-        c("timeline.insert_frame", "Frame", "Insert/Timeline", Some("F5"), "{layer? | layers?: [..], frame?, count?}", true, insert_frame as crate::RunFn),
+        c("timeline.insert_frame", "Frame", "Insert/Timeline", Some("F5"), "{layer? | layers?: [..] | all_layers?: true (every layer with frames at or after the frame, as F5 with no frame selection; the active layer when none has), frame?, count?, advance?: true (the playhead moves onto the last frame inserted, as the key does in the editor)}", true, insert_frame as crate::RunFn),
         c("timeline.remove_frame", "Remove Frame", "Insert/Timeline", Some("Shift+F5"), "{layer? | layers?: [..], frame?, count?}", true, remove_frame),
-        c("timeline.insert_keyframe", "Keyframe", "Insert/Timeline", Some("F6"), "{layer? | layers?: [..], frame?}", true, insert_keyframe),
-        c("timeline.insert_blank_keyframe", "Blank Keyframe", "Insert/Timeline", Some("F7"), "{layer? | layers?: [..], frame?}", true, insert_blank_keyframe),
+        c("timeline.insert_keyframe", "Keyframe", "Insert/Timeline", Some("F6"), "{layer? | layers?: [..], frame?, count? (every frame of the range becomes a keyframe), advance?: true (on a keyframe the new key goes on the next frame, and the playhead moves onto it, as the key does in the editor)}", true, insert_keyframe),
+        c("timeline.insert_blank_keyframe", "Blank Keyframe", "Insert/Timeline", Some("F7"), "{layer? | layers?: [..], frame?, count? (every frame of the range becomes a blank keyframe; keyframes already there are kept), advance?: true (on a keyframe the blank key goes on the next frame instead of clearing it, and the playhead moves onto it)}", true, insert_blank_keyframe),
         c("timeline.clear_keyframe", "Clear Keyframe", "Insert/Timeline", Some("Shift+F6"), "{layer? | layers?: [..], frame?, count?}", true, clear_keyframe),
         c("timeline.move_keyframes", "Move Keyframes", "", None, "{layer? | layers?: [..], from, to?, by, layer_by? (rows down; negative = up)}", true, move_keyframes),
+        c("timeline.move_spans", "Move Spans", "", None, "{layer? | layers?: [..], from, to?, by, layer_by? (rows down; negative = up), copy?: true (Alt-drag: the frames stay where they were too)}: the spans starting in from..=to move whole, keeping their lengths and tweens (as dragging a tween span in Animate), replacing what they land on; the frames they leave are empty", true, move_spans),
         c("timeline.create_motion_tween", "Create Motion Tween", "Insert", None, "{layer?, frame?} (several objects on the key become one graphic symbol; a one-frame span grows to a second)", true, crate::cmds_motion::create),
-        c("timeline.create_tween", "Create Classic Tween", "Insert", None, "{layer?, frame?, easing?}", true, create_tween),
-        c("timeline.create_shape_tween", "Create Shape Tween", "Insert", None, "{layer?, frame?, easing?}", true, create_shape_tween),
+        c("timeline.create_tween", "Create Classic Tween", "Insert", None, "{layer?, frame?, easing? (as timeline.set_easing takes it)}", true, create_tween),
+        c("timeline.create_shape_tween", "Create Shape Tween", "Insert", None, "{layer?, frame?, easing? (as timeline.set_easing takes it)}", true, create_shape_tween),
         c("timeline.remove_tween", "Remove Tween", "Insert", None, "{layer?, frame?} (a motion tween leaves its object as it is on the first frame)", true, remove_tween),
-        c("timeline.set_easing", "Set Tween Easing", "", None, "{easing, layer?, frame?}", true, set_easing),
+        c("timeline.set_easing", "Set Tween Easing", "", None, "{easing: a preset name (Linear, QuadIn … ElasticInOut) | {classic: -100..100} | {bezier: [x1, y1, x2, y2]} | {custom: {points: [..]} | [[x, y], ..]} | {saved: name} | {plugin: id, ease: id} (an ease plug-in's; the tween keeps its sampled curve), group?: all|position|rotation|scale|color|filters (classic tweens: that property group's own ease), layer?, frame?}", true, set_easing),
         c("timeline.set_orient", "Orient to Path", "", None, "{orient: bool, layer?, frame?}", true, set_orient),
+        c(
+            "timeline.set_keep_area",
+            "Keep Area",
+            "",
+            None,
+            "{keep_area: bool, layer?, frame?}: squash and stretch that keeps the object's area (ADR 0115). The span's tween (classic, shape or motion) moves scale X and Y geometrically between keys instead of in straight lines, so keys of one area keep it on every frame; on a motion tween a scale axis without keys of its own follows the other inversely. Off by default",
+            true,
+            set_keep_area,
+        ),
         c("timeline.set_label", "Frame Label", "", None, "{label, layer?, frame?}", true, set_label),
         c("timeline.goto", "Go to Frame", "", None, "{frame}", false, goto),
         c("timeline.next_frame", "Next Frame", "Control", Some("."), "{}", false, |s, _| step(s, 1)),
@@ -38,12 +48,21 @@ pub fn specs() -> Vec<CommandSpec> {
         c("layer.new_folder", "New Folder", "Insert/Timeline", None, "{name?}", true, new_folder),
         c("layer.delete", "Delete Layer", "Modify/Timeline", None, "{layer? (a folder goes with its contents)}", true, delete_layer),
         c("layer.rename", "Rename Layer", "", None, "{name, layer?}", true, rename_layer),
-        c("layer.toggle_visible", "Show/Hide Layer", "", None, "{layer?}", true, |s, p| toggle(s, p, |l| l.visible = !l.visible)),
-        c("layer.toggle_lock", "Lock/Unlock Layer", "", None, "{layer?}", true, |s, p| toggle(s, p, |l| l.locked = !l.locked)),
-        c("layer.toggle_outline", "Outline Layer", "", None, "{layer?}", true, |s, p| toggle(s, p, |l| l.outline = !l.outline)),
+        c("layer.toggle_visible", "Show/Hide Layer", "", None, "{layer?, on?: bool (default: the other way), all?: true (every layer but the camera, as the eye above the layers: hides them all when all show, else shows them all)}", true, |s, p| toggle(s, p, |l| &mut l.visible, true)),
+        c("layer.toggle_lock", "Lock/Unlock Layer", "", None, "{layer?, on?: bool (default: the other way), all?: true (every layer but the camera, as the padlock above the layers: unlocks them all when all are locked, else locks them all)}", true, |s, p| toggle(s, p, |l| &mut l.locked, false)),
+        c("layer.toggle_outline", "Outline Layer", "", None, "{layer?, on?: bool (default: the other way), all?: true (every layer but the camera, as the square above the layers: back to artwork when all are outlines, else all as outlines)}", true, |s, p| toggle(s, p, |l| &mut l.outline, false)),
         c("layer.select", "Select Layer", "", None, "{layer: id} or {index}, select?: bool (also select all of its artwork at the playhead, as a click on the layer's name does; nothing on a locked or hidden layer)", false, select_layer),
         c("layer.move_up", "Move Layer Up", "Modify/Timeline", None, "{layer?}", true, |s, p| move_layer(s, p, -1)),
         c("layer.move_down", "Move Layer Down", "Modify/Timeline", None, "{layer?}", true, |s, p| move_layer(s, p, 1)),
+        c(
+            "layer.move",
+            "Move Layer To",
+            "",
+            None,
+            "{layer?, before?: layer id | after?: layer id | into?: folder id} moves a layer anywhere in the stack, as a drag in the timeline does; a folder, mask or guide moves with everything in it. before / after: it lands just above that layer, or just below it and whatever it holds, beside it (in the same folder, or under the same mask or guide: normal layers only). into: it becomes the first layer in that folder. None of them: the bottom of the stack, outside every folder",
+            true,
+            move_layer_to,
+        ),
         c("layer.toggle_mask", "Mask", "Modify/Timeline", None, "{layer?}", true, toggle_mask),
         c("layer.set_type", "Layer Type", "", None, "{type: normal|mask|masked|guide|guided, layer?}", true, set_layer_type),
         c("layer.add_motion_guide", "Add Classic Motion Guide", "Insert/Timeline", None, "{layer?}", true, add_motion_guide),
@@ -58,7 +77,7 @@ fn toggle_mask(s: &mut Session, p: &Value) -> Result<Value> {
     let ty = if is_mask { "normal" } else { "mask" };
     set_type(s, id, ty)?;
     if !is_mask {
-        let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing);
+        let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing)?;
         // The normal layer directly below, in the same folder, becomes masked.
         let mask_parent = tl.layer(id).and_then(|m| m.parent);
         if let Some(i) = tl.layers.iter().position(|l| l.id == id)
@@ -100,7 +119,7 @@ fn add_motion_guide(s: &mut Session, p: &Value) -> Result<Value> {
     if let Some(k) = guide.keyframe_mut(0) {
         k.duration = s.frame_count().max(1);
     }
-    let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing);
+    let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing)?;
     tl.layers.insert(i, Arc::new(guide));
     if let Some(l) = tl.layers.get_mut(i + 1) {
         Arc::make_mut(l).parent = Some(gid);
@@ -120,6 +139,22 @@ fn set_orient(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"orient": orient}))
 }
 
+/// Keep area (ADR 0115): the span's tween, of any kind, scales geometrically.
+fn set_keep_area(s: &mut Session, p: &Value) -> Result<Value> {
+    let on = opt_bool(p, "keep_area")?.ok_or_else(|| EngineError::Param("param 'keep_area' (true or false) is required".into()))?;
+    let k = keyframe_mut(s, p)?;
+    let kind = if let Some(m) = k.motion.as_mut() {
+        m.keep_area = on;
+        "motion"
+    } else if let Some(t) = k.tween.as_mut() {
+        t.keep_area = on;
+        if t.kind == TweenKind::Shape { "shape" } else { "classic" }
+    } else {
+        return Err(EngineError::State("this span has no tween; create one first".into()));
+    };
+    Ok(json!({"keep_area": on, "tween": kind}))
+}
+
 fn set_layer_type(s: &mut Session, p: &Value) -> Result<Value> {
     let id = opt_u64(p, "layer")?.map_or(s.layer, LayerId);
     set_type(s, id, str_req(p, "type")?)?;
@@ -127,7 +162,7 @@ fn set_layer_type(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 pub(crate) fn set_type(s: &mut Session, id: LayerId, ty: &str) -> Result<()> {
-    let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing);
+    let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing)?;
     let i = tl.layers.iter().position(|l| l.id == id).ok_or_else(|| EngineError::State(format!("no layer with id {}", id.0)))?;
     if tl.layers.get(i).is_some_and(|l| l.kind == LayerKind::Folder) {
         return Err(EngineError::State("a folder holds layers; it can't become another kind of layer".into()));
@@ -232,19 +267,54 @@ pub(crate) fn shift_after(layer: &mut Layer, from: u32, delta: i64) {
     }
 }
 
-/// F5 over a range: `count` frames on each target layer.
+/// F5 over a range: `count` frames on each target layer. With `all_layers` (F5 with no frame
+/// selection) every layer that has frames at or after `frame` grows, so the layers stay in step;
+/// layers that end before it are left alone. With `advance` the playhead moves onto the last
+/// frame inserted, as holding F5 walks along the timeline.
 fn insert_frame(s: &mut Session, p: &Value) -> Result<Value> {
     let (_, frame) = target(s, p)?;
     let count = count_param(p)?;
+    let all = opt_bool(p, "all_layers")?.unwrap_or(false);
+    let ids = if all { layers_at_or_after(s, frame) } else { target_layers(s, p)? };
     let mut frames = 0;
-    for id in target_layers(s, p)? {
+    for &id in &ids {
         let layer = s.layer_mut(Some(id))?;
         for _ in 0..count {
-            insert_frame_at(layer, frame)?;
+            if all && layer.keyframe_index_at(frame).is_none() && layer.end_frame() > frame {
+                // A gap (or the frames before the first key) under the playhead: insert an
+                // empty frame there, so what follows moves along with the other layers.
+                insert_empty_frame_at(layer, frame)?;
+            } else {
+                insert_frame_at(layer, frame)?;
+            }
         }
         frames = frames.max(layer.end_frame());
     }
-    Ok(json!({"frames": frames}))
+    let mut out = json!({"frames": frames, "layers": ids.iter().map(|l| l.0).collect::<Vec<_>>()});
+    if opt_bool(p, "advance")?.unwrap_or(false) {
+        s.set_frame(frame.saturating_add(count).min(frames.saturating_sub(1)));
+        out["playhead"] = json!(s.frame);
+    }
+    Ok(out)
+}
+
+/// The layers F5 with no frame selection extends: every layer of the timeline with frames at or
+/// after `frame` (folders have none). When no layer reaches that far, the active layer, so F5
+/// past the end still lengthens what you are working on.
+fn layers_at_or_after(s: &Session, frame: u32) -> Vec<LayerId> {
+    let tl = s.timeline();
+    let ids: Vec<LayerId> = tl.layers.iter().filter(|l| l.kind != LayerKind::Folder && l.end_frame() > frame).map(|l| l.id).collect();
+    if ids.is_empty() { vec![s.layer] } else { ids }
+}
+
+/// One empty frame at `frame`: everything from there on moves one frame later.
+fn insert_empty_frame_at(layer: &mut Layer, frame: u32) -> Result<()> {
+    if layer.end_frame() >= MAX_FRAME {
+        return Err(EngineError::State("the timeline is at its maximum length".into()));
+    }
+    shift_after(layer, frame, 1);
+    layer.normalize();
+    Ok(())
 }
 
 pub(crate) fn insert_frame_at(layer: &mut Layer, frame: u32) -> Result<()> {
@@ -349,7 +419,7 @@ pub(crate) fn insert_keyframe_at(layer: &mut Layer, frame: u32, copy: bool) -> R
         Some(i) => {
             let Some(k) = layer.keyframe_mut(i) else { return Ok(()) };
             let end = k.end();
-            let tween = if copy { k.tween } else { None };
+            let tween = if copy { k.tween.clone() } else { None };
             // A motion tween split in two keeps moving the same way in both halves.
             let motion = if copy {
                 k.motion.as_ref().map(|m| {
@@ -392,24 +462,68 @@ pub(crate) fn insert_keyframe_at(layer: &mut Layer, frame: u32, copy: bool) -> R
     Ok(())
 }
 
+/// F6. Over a range (`count`, as with frames selected in the editor) every frame in it becomes a
+/// keyframe holding what that frame showed, as Animate's Convert to Keyframes does (#272).
 fn insert_keyframe(s: &mut Session, p: &Value) -> Result<Value> {
-    let (_, frame) = target(s, p)?;
+    let frame = key_frame(s, p)?;
+    let last = last_key_frame(frame, count_param(p)?);
     for id in target_layers(s, p)? {
         let layer = s.layer_mut(Some(id))?;
-        // Inside a motion tween F6 keys every property there; the span stays whole.
-        if !crate::cmds_motion::key_all_at(layer, frame) {
-            insert_keyframe_at(layer, frame, true)?;
+        for f in frame..=last {
+            // Inside a motion tween F6 keys every property there; the span stays whole.
+            if !crate::cmds_motion::key_all_at(layer, f) {
+                insert_keyframe_at(layer, f, true)?;
+            }
         }
     }
-    Ok(json!({"keyframe": frame}))
+    advanced(s, p, frame)
 }
 
+/// F7. Over a range (`count`) every frame in it becomes a blank keyframe, ready for
+/// frame-by-frame drawing (#272). Keyframes already in the range stay as they are: a range edit
+/// makes the keys that are missing and never erases a drawing (one frame alone, without
+/// `advance`, still clears the keyframe it is on).
 fn insert_blank_keyframe(s: &mut Session, p: &Value) -> Result<Value> {
-    let (_, frame) = target(s, p)?;
+    let frame = key_frame(s, p)?;
+    let last = last_key_frame(frame, count_param(p)?);
     for id in target_layers(s, p)? {
-        insert_keyframe_at(s.layer_mut(Some(id))?, frame, false)?;
+        let layer = s.layer_mut(Some(id))?;
+        for f in frame..=last {
+            if last > frame && layer.keyframe_starting_at(f).is_some() {
+                continue;
+            }
+            insert_keyframe_at(layer, f, false)?;
+        }
     }
-    Ok(json!({"keyframe": frame}))
+    advanced(s, p, frame)
+}
+
+/// The last frame of a `count`-frame range starting at `frame`, kept inside the timeline.
+fn last_key_frame(frame: u32, count: u32) -> u32 {
+    frame.saturating_add(count.saturating_sub(1)).min(MAX_FRAME)
+}
+
+/// Where F6 / F7 put the key. With `advance`, a frame that is already a keyframe on every target
+/// layer means "the next one": pressing F6 again after drawing makes the next drawing's key.
+fn key_frame(s: &Session, p: &Value) -> Result<u32> {
+    let (_, frame) = target(s, p)?;
+    if !opt_bool(p, "advance")?.unwrap_or(false) {
+        return Ok(frame);
+    }
+    let ids = target_layers(s, p)?;
+    let tl = s.timeline();
+    let on_keys = !ids.is_empty() && ids.iter().all(|id| tl.layer(*id).is_some_and(|l| l.keyframe_starting_at(frame).is_some()));
+    if on_keys && frame < MAX_FRAME { Ok(frame + 1) } else { Ok(frame) }
+}
+
+/// The result of F6 / F7; with `advance` the playhead moves onto the new key.
+fn advanced(s: &mut Session, p: &Value, frame: u32) -> Result<Value> {
+    let mut out = json!({"keyframe": frame});
+    if opt_bool(p, "advance")?.unwrap_or(false) {
+        s.set_frame(frame);
+        out["playhead"] = json!(frame);
+    }
+    Ok(out)
 }
 
 /// Shift+F6 over a range: clears every keyframe starting in `frame..frame + count` on each
@@ -448,7 +562,7 @@ fn move_keyframes(s: &mut Session, p: &Value) -> Result<Value> {
         Some(v) => v.as_i64().ok_or_else(|| EngineError::Param("param 'layer_by' must be a whole number of layers".into()))?,
     };
     if layer_by != 0 {
-        return move_across_layers(s, p, from, to, by, layer_by);
+        return move_across_layers(s, p, from, to, by, layer_by, false);
     }
     let mut moved = 0;
     for id in target_layers(s, p)? {
@@ -457,12 +571,37 @@ fn move_keyframes(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"moved": moved}))
 }
 
-/// Dragging keyframes onto other layers (`layer_by` rows down, negative = up): the frames are
-/// lifted out of every source layer first (leaving blank keyframes, as in Animate), then
-/// placed on the target layers, replacing what was there; frames after the landing range
-/// keep their content. Lifting everything before placing anything makes overlapping row
-/// ranges (dragging two rows down by one) come out right.
-fn move_across_layers(s: &mut Session, p: &Value, from: u32, to: u32, by: i64, layer_by: i64) -> Result<Value> {
+/// Moving whole spans (ADR 0083): the spans starting in `from..=to` keep their lengths, motion
+/// and tweens, and land `by` frames later and `layer_by` rows down, replacing what was there.
+/// `copy` (Alt-drag) leaves the originals where they were.
+fn move_spans(s: &mut Session, p: &Value) -> Result<Value> {
+    let from = opt_u32(p, "from")?.ok_or_else(|| EngineError::Param("param 'from' is required".into()))?;
+    let to = opt_u32(p, "to")?.unwrap_or(from);
+    let by = p.get("by").and_then(Value::as_i64).ok_or_else(|| EngineError::Param("param 'by' must be a whole number of frames".into()))?;
+    if to < from || to > MAX_FRAME || by.unsigned_abs() > u64::from(MAX_FRAME) {
+        return Err(EngineError::Param(format!("frames must be in order and within {MAX_FRAME}")));
+    }
+    let layer_by = match p.get("layer_by") {
+        None | Some(Value::Null) => 0,
+        Some(v) => v.as_i64().ok_or_else(|| EngineError::Param("param 'layer_by' must be a whole number of layers".into()))?,
+    };
+    let copy = opt_bool(p, "copy")?.unwrap_or(false);
+    if by == 0 && layer_by == 0 {
+        if copy {
+            return Err(EngineError::State("the copy would land on the frames it copies: drag it somewhere else".into()));
+        }
+        return Ok(json!({"moved": 0}));
+    }
+    move_across_layers(s, p, from, to, by, layer_by, copy)
+}
+
+/// Dragging keyframes onto other layers (`layer_by` rows down, negative = up), or whole spans
+/// along their own: the frames are lifted out of every source layer first (leaving blank
+/// keyframes, as in Animate; a `copy` leaves them be), then placed on the target layers,
+/// replacing what was there; frames after the landing range keep their content. Lifting
+/// everything before placing anything makes overlapping row ranges (dragging two rows down by
+/// one) come out right.
+fn move_across_layers(s: &mut Session, p: &Value, from: u32, to: u32, by: i64, layer_by: i64, copy: bool) -> Result<Value> {
     let order: Vec<LayerId> = s.timeline().layers.iter().map(|l| l.id).collect();
     let mut rows: Vec<usize> = target_layers(s, p)?.iter().filter_map(|id| order.iter().position(|o| o == id)).collect();
     rows.sort_unstable();
@@ -478,7 +617,9 @@ fn move_across_layers(s: &mut Session, p: &Value, from: u32, to: u32, by: i64, l
     for &(src, dst) in &plan {
         let layer = s.layer_mut(Some(src))?;
         let keys: Vec<Keyframe> = layer.keyframes.iter().filter(|k| k.start >= from && k.start <= to).map(|k| (**k).clone()).collect();
-        if let (Some(first), Some(last)) = (keys.first().map(|k| k.start), keys.last().map(Keyframe::end)) {
+        if !copy
+            && let (Some(first), Some(last)) = (keys.first().map(|k| k.start), keys.last().map(Keyframe::end))
+        {
             layer.keyframes.retain(|k| !(k.start >= from && k.start <= to));
             // The frames stay; their content leaves.
             layer.keyframes.push(Arc::new(Keyframe::new(first, last - first)));
@@ -591,22 +732,24 @@ fn create_shape_tween(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn tween_of_kind(s: &mut Session, p: &Value, kind: TweenKind) -> Result<Value> {
+    let given = opt_easing_in(s, p, "easing")?;
     let k = keyframe_mut(s, p)?;
-    // Switching kinds keeps the easing the span already had, unless one is given.
-    let easing = match opt_easing(p, "easing")? {
-        Some(e) => e,
-        None => k.tween.map(|t| t.easing).unwrap_or_default(),
-    };
-    let orient = k.tween.is_some_and(|t| t.orient);
+    // Switching kinds keeps the easing the span already had, unless one is given; a classic
+    // tween keeps its property groups' eases (a shape tween has one ease, as in Animate).
+    let easing = given.unwrap_or_else(|| k.tween.as_ref().map(|t| t.easing.clone()).unwrap_or_default());
+    let orient = k.tween.as_ref().is_some_and(|t| t.orient);
+    let keep_area = k.tween.as_ref().is_some_and(|t| t.keep_area);
+    let groups = if kind == TweenKind::Classic { k.tween.as_ref().map(|t| t.groups.clone()).unwrap_or_default() } else { Vec::new() };
     // It replaces a motion tween, keeping the object as it is on the first frame.
     crate::cmds_motion::bake_first_frame(k);
-    k.tween = Some(Tween { easing, kind, orient });
+    let label = easing.label();
+    k.tween = Some(Tween { easing, kind, orient, groups, keep_area });
     // Shape hints only mean something to a shape tween.
     if kind != TweenKind::Shape {
         k.hints.clear();
     }
     let kind = if kind == TweenKind::Shape { "shape" } else { "classic" };
-    Ok(json!({"tween": k.start, "easing": easing.label(), "kind": kind}))
+    Ok(json!({"tween": k.start, "easing": label, "kind": kind}))
 }
 
 fn remove_tween(s: &mut Session, p: &Value) -> Result<Value> {
@@ -618,11 +761,17 @@ fn remove_tween(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn set_easing(s: &mut Session, p: &Value) -> Result<Value> {
-    let easing = opt_easing(p, "easing")?.ok_or_else(|| EngineError::Param("param 'easing' is required".into()))?;
+    let easing = opt_easing_in(s, p, "easing")?.ok_or_else(|| EngineError::Param("param 'easing' is required".into()))?;
+    let group = crate::cmds_ease::group(p)?;
     let k = keyframe_mut(s, p)?;
     let t = k.tween.as_mut().ok_or_else(|| EngineError::State("this span has no tween; create one first".into()))?;
-    t.easing = easing;
-    Ok(json!({"easing": easing.label()}))
+    let label = easing.label();
+    match group {
+        Some(_) if t.kind == TweenKind::Shape => return Err(EngineError::State("a shape tween has one ease for everything; property groups ease separately in classic tweens".into())),
+        Some(g) => t.set_ease(g, Some(easing)),
+        None => t.easing = easing,
+    }
+    Ok(json!({"easing": label, "group": group.map_or("all", |g| g.key())}))
 }
 
 fn set_label(s: &mut Session, p: &Value) -> Result<Value> {
@@ -689,7 +838,7 @@ fn add_layer(s: &mut Session, p: &Value, kind: LayerKind) -> Result<Value> {
         k.duration = s.frame_count().max(1);
     }
     layer.color = layer_color(n);
-    let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing);
+    let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing)?;
     tl.layers.insert(at, Arc::new(layer));
     tl.repair_masks();
     s.layer = id;
@@ -710,7 +859,7 @@ fn delete_layer(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(EngineError::State("a document needs at least one layer to draw on".into()));
     }
     let up = tl.layers.get(i).and_then(|l| l.parent);
-    let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing);
+    let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing)?;
     if !is_folder {
         for l in tl.layers.iter_mut().filter(|l| l.parent == Some(id)) {
             Arc::make_mut(l).parent = up;
@@ -737,10 +886,31 @@ fn rename_layer(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"name": layer.name}))
 }
 
-fn toggle(s: &mut Session, p: &Value, f: fn(&mut Layer)) -> Result<Value> {
+/// Show, lock or outline: one layer, or with `all` every layer but the camera (the buttons
+/// above the layer names, as in Animate, #422). `rest` is the state layers start in (shown,
+/// unlocked, artwork): while any layer is at rest `all` takes every layer away from it (hide,
+/// lock, outline), and once none is it brings them all back, so one click gets them alike.
+fn toggle(s: &mut Session, p: &Value, field: fn(&mut Layer) -> &mut bool, rest: bool) -> Result<Value> {
+    let on = opt_bool(p, "on")?;
+    if opt_bool(p, "all")? == Some(true) {
+        let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing)?;
+        let read = |l: &Arc<Layer>| *field(&mut Layer::clone(l));
+        let any_at_rest = tl.layers.iter().filter(|l| l.kind != LayerKind::Camera).any(|l| read(l) == rest);
+        let to = on.unwrap_or(if any_at_rest { !rest } else { rest });
+        let mut changed = 0;
+        for l in tl.layers.iter_mut().filter(|l| l.kind != LayerKind::Camera) {
+            // Only layers that change are copied (the rest stay shared with the undo history).
+            if read(l) != to {
+                *field(Arc::make_mut(l)) = to;
+                changed += 1;
+            }
+        }
+        return Ok(json!({"all": true, "on": to, "changed": changed}));
+    }
     let lid = opt_u64(p, "layer")?.map(LayerId);
     let layer = s.layer_mut(lid)?;
-    f(layer);
+    let f = field(layer);
+    *f = on.unwrap_or(!*f);
     Ok(json!({"visible": layer.visible, "locked": layer.locked, "outline": layer.outline}))
 }
 
@@ -770,12 +940,83 @@ fn select_layer(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"layer": id.0}))
 }
 
+/// Moves a layer anywhere in the stack (a drag in the timeline, #407). A folder, mask or guide
+/// goes with everything in it. The layer lands beside `before` (just above it) or `after` (just
+/// below it and whatever it holds), with that layer's parent; first inside the folder `into`;
+/// or at the bottom outside every folder.
+fn move_layer_to(s: &mut Session, p: &Value) -> Result<Value> {
+    let id = opt_u64(p, "layer")?.map_or(s.layer, LayerId);
+    let before = opt_u64(p, "before")?.map(LayerId);
+    let after = opt_u64(p, "after")?.map(LayerId);
+    let into = opt_u64(p, "into")?.map(LayerId);
+    if [before, after, into].iter().flatten().count() > 1 {
+        return Err(EngineError::Param("pass one of before, after and into".into()));
+    }
+    let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing)?;
+    let pos = |tl: &anicraft_doc::Timeline, l: LayerId| tl.layers.iter().position(|x| x.id == l).ok_or_else(|| EngineError::State(format!("no layer with id {}", l.0)));
+    let i = pos(tl, id)?;
+    let block = tl.group_range(i);
+    let (kind, was_parent) = tl.layers.get(i).map_or((LayerKind::Normal, None), |l| (l.kind, l.parent));
+    if kind == LayerKind::Camera {
+        return Err(EngineError::State("The camera layer stays on top".into()));
+    }
+    // Where it goes: the row it lands above, counted before it leaves (the row count: the
+    // bottom), and its new parent.
+    let (slot, parent) = if let Some(f) = into {
+        let fi = pos(tl, f)?;
+        if tl.layers.get(fi).is_none_or(|l| l.kind != LayerKind::Folder) {
+            return Err(EngineError::State("Only a folder takes layers: pass a folder's id as into".into()));
+        }
+        if block.contains(&fi) {
+            return Err(EngineError::State("A folder can't go inside itself".into()));
+        }
+        (fi + 1, Some(f))
+    } else if let Some(beside) = before.or(after) {
+        let bi = pos(tl, beside)?;
+        if block.contains(&bi) {
+            // Beside itself or something inside it: it is there already.
+            return Ok(json!({"index": i, "parent": was_parent.map(|p| p.0)}));
+        }
+        let parent = tl.layers.get(bi).and_then(|l| l.parent);
+        if kind != LayerKind::Normal && parent.and_then(|p| tl.layer(p)).is_some_and(|p| matches!(p.kind, LayerKind::Mask | LayerKind::Guide)) {
+            return Err(EngineError::State("Only a normal layer can go under a mask or a guide".into()));
+        }
+        (if before.is_some() { bi } else { tl.group_range(bi).end }, parent)
+    } else {
+        (tl.layers.len(), None)
+    };
+    // Folders nest so deep and no deeper: refuse rather than flatten what was dragged.
+    let head = tl.depth(i);
+    let deepest = block.clone().map(|j| tl.depth(j).saturating_sub(head)).max().unwrap_or(0);
+    let new_head = match parent {
+        Some(p) => tl.depth(pos(tl, p)?) + 1,
+        None => 0,
+    };
+    if new_head + deepest >= anicraft_doc::MAX_LAYER_DEPTH {
+        return Err(EngineError::State(format!("Folders nest at most {} deep", anicraft_doc::MAX_LAYER_DEPTH)));
+    }
+    // A slot at the moved rows themselves is where they already are (only the parent changes).
+    let slot = if block.contains(&slot) { block.end } else { slot };
+    let at = if slot >= block.end { slot - block.len() } else { slot };
+    let moved: Vec<Arc<Layer>> = tl.layers.drain(block).collect();
+    let at = at.min(tl.layers.len());
+    tl.layers.splice(at..at, moved);
+    if let Some(l) = tl.layers.get_mut(at)
+        && l.parent != parent
+    {
+        Arc::make_mut(l).parent = parent;
+    }
+    tl.repair_masks();
+    let index = pos(tl, id)?;
+    Ok(json!({"index": index, "parent": tl.layers.get(index).and_then(|l| l.parent).map(|p| p.0)}))
+}
+
 /// Moves a layer one step. A folder or mask moves with everything in it, past a whole sibling,
 /// or out of its folder at either end. Any other layer swaps with its neighbour and then belongs
 /// where it landed: moving it in under a folder or mask puts it inside, moving it out frees it.
 fn move_layer(s: &mut Session, p: &Value, d: i64) -> Result<Value> {
     let id = opt_u64(p, "layer")?.map_or(s.layer, LayerId);
-    let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing);
+    let tl = crate::editing::edited_mut(&mut s.doc, s.scene, &s.editing)?;
     let i = tl.layers.iter().position(|l| l.id == id).ok_or_else(|| EngineError::State(format!("no layer with id {}", id.0)))?;
     let n = tl.layers.len();
     if tl.layers.get(i).is_some_and(|l| matches!(l.kind, LayerKind::Mask | LayerKind::Folder)) {

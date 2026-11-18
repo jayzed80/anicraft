@@ -195,9 +195,8 @@ The details, including the server entry for other MCP clients, are in [`docs/mcp
 
 [**docs/roadmap.md**](docs/roadmap.md) has the honest status by dimension, milestones M0–M8 and what's next.
 
-**What's missing:** audio layers, ActionScript beyond the timeline subset (frame scripts
-are kept, and those that control the timeline run; ADR 0013), motion tweens from XFL, a GPU renderer, and macOS and Linux CI runners
-(AniCraft is verified on Windows so far).
+**What's missing:** ActionScript beyond the timeline subset (frame scripts are kept, and those
+that control the timeline run; ADR 0013), and motion tweens from XFL.
 
 **Workspace:** strict downward-only layering, checked by `cargo test`:
 
@@ -273,7 +272,7 @@ RISC-V (riscv64): `anicraft-<ver>-linux-riscv64.tar.gz`, a tarball only.
 
 | Build | File | Notes |
 |---|---|---|
-| Static site | `anicraft-web-<ver>.zip` | Runs in a modern browser; host it on any static server |
+| Static site | `anicraft-web-<ver>.zip` | Not in the releases yet: build it yourself with `packaging/web/package.sh` ([docs/web.md](docs/web.md)), then host it on any static server |
 
 ## The Crafting Apps
 

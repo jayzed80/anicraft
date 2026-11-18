@@ -285,6 +285,7 @@ pub fn multi_frames(tl: &Timeline, playhead: u32, first: u32, last: u32) -> Vec<
 fn keep_layers(dl: &mut DisplayList, layers: &[LayerId]) {
     let set: HashSet<LayerId> = layers.iter().copied().collect();
     dl.items.retain(|i| set.contains(&i.layer) || (i.masks.is_some() && i.group.is_none()));
+    dl.links.clear();
 }
 
 /// The parts as one list, layer by layer: each layer's items from every part, in part order,
@@ -308,6 +309,9 @@ fn interleave(tl: &Timeline, parts: Vec<DisplayList>) -> (DisplayList, Vec<usize
         let shift = move |c: Option<u32>| c.map(|c| c + base);
         let gshift = move |g: Option<u32>| g.map(|g| g + gbase);
         dl.clip_parents.extend(part.clip_parents.into_iter().map(shift));
+        for (i, m) in part.clip_modes.into_iter().enumerate() {
+            dl.set_clip_mode(base + i as u32, m);
+        }
         dl.groups.extend(part.groups.into_iter().map(|g| anicraft_doc::Group { parent: gshift(g.parent), clip: shift(g.clip), ..g }));
         iters.push(
             part.items
@@ -407,10 +411,7 @@ impl Session {
         let mut parts = Vec::new();
         let mut starts: Vec<Vec<(LayerId, u32)>> = Vec::new();
         for e in multi_frames(tl, self.frame, first, last) {
-            let mut dl = match self.editing_symbol().and_then(|id| self.doc.symbol(id)) {
-                Some(sym) => anicraft_doc::evaluate_timeline(&self.doc, &sym.timeline, e.frame),
-                None => anicraft_doc::evaluate_scene(&self.doc, self.scene, e.frame),
-            };
+            let mut dl = if self.editing.is_empty() { anicraft_doc::evaluate_scene(&self.doc, self.scene, e.frame) } else { anicraft_doc::evaluate_timeline(&self.doc, tl, e.frame) };
             keep_layers(&mut dl, &e.layers);
             parts.push(dl);
             starts.push(e.layers.iter().map(|l| (*l, e.frame)).collect());

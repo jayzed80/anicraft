@@ -57,16 +57,7 @@ const REPORTS: &[(&str, &[(&str, usize)])] = &[
     ("bitmaps", &[("instances of missing bitmaps", 1), ("missing bitmap files", 1)]),
     ("colour", &[]),
     ("filters", &[("unknown filters", 1)]),
-    (
-        "gradients",
-        &[
-            ("elliptical radial gradients (drawn round)", 1),
-            ("gradient and bitmap strokes (drawn in one colour)", 1),
-            ("linear-RGB gradients (blended in sRGB)", 1),
-            ("radial gradient focal points (drawn centred)", 1),
-            ("repeating and reflecting gradients (drawn padded)", 2),
-        ],
-    ),
+    ("gradients", &[("gradient and bitmap strokes (drawn in one colour)", 1)]),
     ("guides", &[]),
     ("interactive", &[]),
     ("masks", &[]),
@@ -76,12 +67,47 @@ const REPORTS: &[(&str, &[(&str, usize)])] = &[
     ("scripts", &[]),
     ("shapes", &[]),
     (
+        "sounds",
+        &[
+            ("missing sound files", 1),
+            ("sound in and out points (played whole)", 1),
+            ("sounds in formats AniCraft can't decode", 2),
+            ("unknown sound effects (played without)", 1),
+        ],
+    ),
+    (
         "symbols",
         &[("instances of missing symbols", 1), ("missing library files", 1), ("reverse loop modes (played forward)", 1)],
     ),
     ("text", &[("text fields (no fonts on this computer)", 4)]),
     ("textfields", &[("text fields (no fonts on this computer)", 4)]),
     ("tweens", &[("motion tweens (kept as keyframes)", 1), ("tween spins (turned the shortest way)", 1)]),
+    ("video", &[("instances of videos AniCraft can't play", 1), ("videos (first frame kept as a still)", 1), ("videos AniCraft can't play", 2)]),
+];
+
+/// Items named under one kind of report line.
+type Named = (&'static str, &'static [&'static str]);
+
+/// The items each package's report names (ADR 0086), by kind, in the order the document lists
+/// them; packages not listed name none.
+const NAMES: &[(&str, &[Named])] = &[
+    (
+        "sounds",
+        &[
+            ("missing sound files", &["lost.wav"]),
+            (
+                "sounds in formats AniCraft can't decode",
+                &["theme.aif: AIFF", "Sounds/loop: Animate's own sound data"],
+            ),
+        ],
+    ),
+    (
+        "video",
+        &[
+            ("videos (first frame kept as a still)", &["Clips/screen.flv: Screen Video, 2.0 s"]),
+            ("videos AniCraft can't play", &["intro.flv: FLV, On2 VP6, 4.5 s", "gone.mp4: its file is missing, 1.0 s"]),
+        ],
+    ),
 ];
 
 /// What each package keeps without running (ADR 0013 tier 1: scripts outside the subset, and
@@ -90,8 +116,10 @@ const KEPT: &[(&str, &[(&str, usize)])] = &[
     ("bitmaps", &[("library folders", 1)]),
     ("nineslice", &[("library folders", 1)]),
     ("scripts", &[("document class", 1), ("frame scripts in ActionScript 3.0", 1), ("linkage classes", 1)]),
+    ("sounds", &[("library folders", 1)]),
     ("symbols", &[("library folders", 1)]),
     ("textfields", &[("text field variables (ActionScript 1.0 and 2.0)", 1)]),
+    ("video", &[("library folders", 1)]),
 ];
 
 /// The frame scripts each package brings that run (ADR 0013 tier 2: in the subset).
@@ -119,6 +147,8 @@ fn each_package_reports_exactly_what_it_uses_that_does_not_come_across() {
         assert_eq!(report.kept, kept, "{case}: kept, not run");
         let runs: BTreeMap<String, usize> = RUNS.iter().find(|(c, _)| c == case).map(|(_, k)| k.iter().map(|(k, n)| (k.to_string(), *n)).collect()).unwrap_or_default();
         assert_eq!(report.runs, runs, "{case}: frame scripts that run");
+        let names: BTreeMap<String, Vec<String>> = NAMES.iter().find(|(c, _)| c == case).map(|(_, k)| k.iter().map(|(k, n)| (k.to_string(), n.iter().map(|s| s.to_string()).collect())).collect()).unwrap_or_default();
+        assert_eq!(report.names, names, "{case}: the items named");
         assert!(report.notes.is_empty() && report.missing_fonts.is_empty(), "{case}: {report:?}");
     }
 }
@@ -217,9 +247,24 @@ fn colour_effects_come_across_in_every_style() {
 #[test]
 fn tweens_keep_their_kinds_eases_and_hints() {
     let (doc, _) = import("tweens");
-    let t = |l: usize| doc.timeline(0).layers[l].keyframes[0].tween.expect("a tween");
+    let t = |l: usize| doc.timeline(0).layers[l].keyframes[0].tween.clone().expect("a tween");
     assert_eq!((t(0).kind, t(0).easing), (TweenKind::Classic, Easing::Classic(-100.0)));
     assert_eq!(t(1).easing, Easing::CubicBezier(0.7, 0.0, 0.3, 1.0), "a one-segment custom ease is a cubic Bézier");
+    // Per-property custom eases (ADR 0081): position's of three segments, exactly, overshooting
+    // and settling; scale's of one; the rest linear.
+    use anicraft_doc::EaseGroup;
+    let per = t(5);
+    assert_eq!(per.easing, Easing::Linear);
+    let Easing::Custom(pos) = per.ease(EaseGroup::Position) else { panic!("{per:?}") };
+    let anchors: Vec<(f32, f32)> = pos.points().iter().map(|p| (p.at.x, p.at.y)).collect();
+    assert_eq!(anchors, [(0.0, 0.0), (0.4, 1.3), (0.7, 0.8), (1.0, 1.0)]);
+    assert!((pos.points()[1].h_in.x + 0.15).abs() < 1e-5 && (pos.points()[1].out.x - 0.15).abs() < 1e-5);
+    assert_eq!(per.ease(EaseGroup::Scale), &Easing::CubicBezier(0.8, 0.0, 0.9, 0.5));
+    assert_eq!(per.ease(EaseGroup::Rotation), &Easing::Linear);
+    // At the middle frame the ball is past its end (x 180), still at full size.
+    let el = anicraft_doc::evaluate_layer_elements(&doc.timeline(0).layers[5], 6).unwrap().1[0].clone();
+    let m = el.transform.decompose();
+    assert!(m.tx > 180.0 && (m.sx - (1.0 + 0.5 * Easing::CubicBezier(0.8, 0.0, 0.9, 0.5).apply(0.5))).abs() < 1e-3, "{m:?}");
     assert_eq!((t(3).kind, t(3).easing), (TweenKind::Shape, Easing::Classic(50.0)));
     let hints = &doc.timeline(0).layers[3].keyframes[0].hints;
     assert_eq!(hints.len(), 1);
@@ -260,7 +305,7 @@ fn guides_guide_and_never_draw() {
     let l = &doc.timeline(0).layers;
     assert_eq!((l[0].kind, l[1].kind), (LayerKind::Guide, LayerKind::Guide));
     assert_eq!((l[2].parent, l[3].parent), (Some(l[1].id), Some(l[1].id)), "both riders follow the arc");
-    assert!(l[2].keyframes[0].tween.is_some_and(|t| t.orient));
+    assert!(l[2].keyframes[0].tween.as_ref().is_some_and(|t| t.orient));
     // Half-way the riders are on the arc, well above the straight line between their ends.
     let mid = evaluate(&doc, 6);
     let drawn: Vec<_> = mid.items.iter().filter(|i| !i.guide).collect();
@@ -289,9 +334,10 @@ fn scripts_linkage_and_the_document_class_come_across_verbatim() {
     let source = |tl: &anicraft_doc::Timeline, key: usize| tl.layers[0].keyframes[key].script.as_ref().and_then(|s| s.source()).cloned();
     let first = source(doc.timeline(0), 0).unwrap();
     assert_eq!(first.language, anicraft_doc::Language::ActionScript3);
-    // Byte for byte what the CDATA holds: tabs, blank lines, < & ' " and all.
+    // CDATA's payload, including tabs, blank lines, < & ' " and all. XML normalizes CRLF to LF;
+    // the source fixture can be checked out with CRLF on Windows.
     let file = String::from_utf8(files("scripts")["DOMDocument.xml"].clone()).unwrap();
-    let cdata = file.split("<![CDATA[").nth(1).and_then(|s| s.split("]]>").next()).unwrap();
+    let cdata = file.split("<![CDATA[").nth(1).and_then(|s| s.split("]]>").next()).unwrap().replace("\r\n", "\n");
     assert_eq!(first.text, cdata);
     assert!(first.text.contains("\tif (hero_mc.currentFrame < 2 && e.target != null) {") && first.lines() == 10, "{:?}", first.text);
     assert_eq!(source(doc.timeline(0), 1).unwrap().text.replace("\r\n", "\n"), "hero_mc.gotoAndStop(2);\ntrace(\"Walked > 0 & done\");");
@@ -317,11 +363,71 @@ fn bitmaps_come_from_png_and_jpeg_files() {
     assert_eq!(evaluate(&doc, 0).items.iter().filter(|i| i.image.is_some()).count(), 5);
 }
 
+/// ADR 0086: the sounds AniCraft decodes come into the Library, in their folder, and every
+/// frame keeps its sound's sync, repeats and effect.
+#[test]
+fn sounds_come_across_with_their_sync_repeats_and_effects() {
+    use anicraft_doc::sound::{EnvelopePoint, SoundEffect};
+    use anicraft_doc::{LibraryEntry, LibraryItem, SoundSync};
+    let (doc, _) = import("sounds");
+    let sounds: Vec<(&str, u32, u16)> = doc.sounds.iter().map(|s| (s.name.as_str(), s.rate, s.channels)).collect();
+    assert_eq!(sounds, [("beep.wav", 11025, 1), ("tone.mp3", 22050, 1), ("voice.wav", 8000, 1)]);
+    assert_eq!(doc.sounds[0].frames, 11025 / 4);
+    let paths: Vec<String> = doc.sounds.iter().map(|s| doc.entry_path(LibraryEntry::Item(LibraryItem::Sound(s.id)))).collect();
+    assert_eq!(paths, ["Sounds/beep.wav", "Sounds/tone.mp3", "voice.wav"]);
+    let (beep, tone, voice) = (doc.sounds[0].id, doc.sounds[1].id, doc.sounds[2].id);
+    let music = doc.timeline(0).layers[0].keyframes[0].sound.clone().unwrap();
+    assert_eq!((music.sound, music.sync, music.looping), (tone, SoundSync::Stream, true));
+    let got: Vec<_> = doc.timeline(0).layers[1].keyframes.iter().map(|k| (k.start, k.sound.as_ref().map(|s| (s.sound, s.sync, s.repeat, s.effect.clone())))).collect();
+    let custom = SoundEffect::Custom(vec![EnvelopePoint::new(0.0, 1.0, 0.0), EnvelopePoint::new(0.25, 0.25, 1.0)]);
+    assert_eq!(
+        got,
+        [
+            (0, Some((beep, SoundSync::Event, 1, SoundEffect::LeftChannel))),
+            (4, Some((beep, SoundSync::Event, 1, SoundEffect::FadeRightToLeft))),
+            (8, Some((beep, SoundSync::Event, 1, custom))),
+            (12, Some((beep, SoundSync::Start, 2, SoundEffect::FadeOut))),
+            // An effect AniCraft doesn't know plays without one (reported).
+            (16, Some((beep, SoundSync::Event, 1, SoundEffect::None))),
+            (18, Some((beep, SoundSync::Stop, 1, SoundEffect::None))),
+            // In and out points are reported; the sound plays whole.
+            (20, Some((beep, SoundSync::Event, 1, SoundEffect::None))),
+            // IMA ADPCM WAV is now decoded by craft-audio.
+            (22, Some((voice, SoundSync::Event, 1, SoundEffect::None))),
+        ]
+    );
+    // The soundtrack hears them: the stream across the movie and the beeps where they start.
+    let voices = anicraft_doc::sound::voices(&doc, 44_100);
+    assert!(voices.len() >= 6, "{}", voices.len());
+}
+
+/// ADR 0086: a Screen Video comes across as a still of its first frame, which its instance
+/// shows at the instance's frame size; the other videos are named, not shown.
+#[test]
+fn a_screen_video_comes_across_as_its_first_frame() {
+    use anicraft_doc::{LibraryEntry, LibraryItem};
+    let (doc, _) = import("video");
+    let b: Vec<(&str, u32, u32)> = doc.bitmaps.iter().map(|b| (b.name.as_str(), b.width, b.height)).collect();
+    assert_eq!(b, [("screen.flv (first frame)", 64, 48)]);
+    assert_eq!(doc.entry_path(LibraryEntry::Item(LibraryItem::Bitmap(doc.bitmaps[0].id))), "Clips/screen.flv (first frame)");
+    let px = doc.bitmaps[0].pixels().unwrap();
+    let at = |x: i64, y: i64| px.at(x, y).map(|c| (c * 255.0).round() as u8);
+    // Top left red, top right green, bottom left blue, bottom right yellow: the blocks (32 px,
+    // bottom row first, the top row partial) and their rows (bottom first) in place.
+    assert_eq!([at(0, 0), at(63, 0), at(0, 47), at(63, 47), at(31, 23), at(32, 24)], [[230, 57, 70, 255], [42, 157, 143, 255], [38, 70, 200, 255], [233, 196, 106, 255], [230, 57, 70, 255], [233, 196, 106, 255]]);
+    let frame = evaluate(&doc, 0);
+    let still: Vec<_> = frame.items.iter().filter(|i| i.image.is_some()).collect();
+    assert_eq!(still.len(), 1, "only the Screen Video shows");
+    assert_eq!(still[0].transform.m, [1.5, 0.0, 0.0, 1.5, 20.0, 20.0], "sized to its frame (96 × 72) and moved");
+}
+
 #[test]
 fn filters_and_blend_modes_come_across() {
     let (doc, _) = import("filters");
-    let filters: Vec<usize> = doc.timeline(0).layers[0].keyframes[0].elements.iter().map(|e| if let ElementKind::Symbol { filters, .. } = &e.kind { filters.len() } else { 99 }).collect();
-    assert_eq!(filters, [1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 1], "switched-off and unknown filters are left out");
+    let filters: Vec<(usize, usize)> = doc.timeline(0).layers[0].keyframes[0].elements.iter().map(|e| if let ElementKind::Symbol { filters, .. } = &e.kind { (filters.len(), filters.iter().filter(|f| f.enabled).count()) } else { (99, 99) }).collect();
+    // A switched-off filter comes in switched off, keeping its place (ADR 0091); unknown ones
+    // are left out.
+    assert_eq!(filters, [(1, 1), (1, 1), (1, 1), (1, 1), (1, 1), (1, 1), (1, 1), (2, 2), (1, 0), (0, 0), (1, 1)]);
     let blends: Vec<&str> = doc.timeline(0).layers[1].keyframes[0].elements.iter().filter_map(|e| if let ElementKind::Symbol { blend, .. } = &e.kind { Some(blend.key()) } else { None }).collect();
     assert_eq!(blends, ["multiply", "screen", "difference", "add", "subtract", "overlay", "hardlight", "invert"]);
 }
@@ -338,7 +444,9 @@ fn text_fields_become_blocks_with_this_computers_fonts() {
         .iter()
         .filter_map(|e| if let ElementKind::Text(t) = &e.kind { Some((e.name.clone(), t.text.clone(), t.size, t.bold)) } else { None })
         .collect();
-    let want = [("", "Corpus", 28.0, true), ("", "self-authored, line two", 12.0, false), ("", "A fixed-width field wraps its words onto lines.", 11.0, false), ("score", "Score 0042", 18.0, false), ("answer", "type here", 14.0, false)];
+    // One block per field, its runs kept (ADR 0085): the title's style is the block's first.
+    let want = [("", "Corpus
+self-authored, line two", 28.0, true), ("", "A fixed-width field wraps its words onto lines.", 11.0, false), ("score", "Score 0042", 18.0, false), ("answer", "type here", 14.0, false)];
     assert_eq!(blocks.iter().map(|(n, t, s, b)| (n.as_str(), t.as_str(), *s, *b)).collect::<Vec<_>>(), want);
     assert_eq!(report.runs.get("dynamic text fields"), Some(&1), "fields run in Test Movie (ADR 0066)");
     assert!(!report.skipped.contains_key("text fields (no fonts on this computer)"));
@@ -351,6 +459,39 @@ fn text_fields_become_blocks_with_this_computers_fonts() {
         .collect();
     use anicraft_doc::TextKind::{Dynamic, Input};
     assert_eq!(fields, [("score_txt".into(), Dynamic, 200.0, 28.0), ("name_txt".into(), Input, 200.0, 24.0), ("notes_txt".into(), Input, 140.0, 64.0), ("pw_txt".into(), Input, 120.0, 24.0)]);
+}
+
+/// ADR 0099: a text field's `<filters>` (the records an instance holds) come in on the text, in
+/// order, switched-off ones switched off; nothing about them is reported as skipped.
+#[test]
+fn filters_on_text_fields_come_in_on_the_text() {
+    let mut package = files("textfields");
+    let xml = String::from_utf8(package["DOMDocument.xml"].clone()).unwrap();
+    let field = "<DOMDynamicText name=\"score_txt\" fontRenderingMode=\"standard\" width=\"200\" height=\"28\" border=\"true\" isSelectable=\"false\">";
+    assert!(xml.contains(field), "the fixture's dynamic field");
+    let filters = "<filters><DropShadowFilter blurX=\"4\" blurY=\"4\" distance=\"6\" angle=\"45\" color=\"#112233\" strength=\"0.6\"/><GlowFilter blurX=\"10\" blurY=\"10\" color=\"#E63946\" enabled=\"false\"/><SparkleFilter/></filters>";
+    package.insert("DOMDocument.xml".into(), xml.replace(field, &format!("{field}{filters}")).into_bytes());
+    // Without fonts no text comes in; the import still reads the package, and says only that.
+    let (_, report) = import_files(&package, &Fonts::from_faces(Vec::new())).unwrap();
+    assert!(!report.skipped.contains_key("filters on text"), "{:?}", report.skipped);
+    assert_eq!(report.skipped.get("unknown filters"), Some(&1), "a filter AniCraft doesn't know is reported: {:?}", report.skipped);
+    let fonts = Fonts::get();
+    if fonts.resolve("").is_none() {
+        return; // A computer without fonts: nothing to hold the filters.
+    }
+    let (doc, report) = import_files(&package, fonts).unwrap();
+    assert!(!report.skipped.contains_key("filters on text"), "{:?}", report.skipped);
+    let texts: Vec<(String, Vec<anicraft_doc::FilterEntry>)> = doc.timeline(0).layers[1].keyframes[0].elements.iter().filter_map(|e| if let ElementKind::Text(t) = &e.kind { Some((e.name.clone(), t.filters.clone())) } else { None }).collect();
+    let (name, list) = &texts[0];
+    assert_eq!(name, "score_txt");
+    assert_eq!(list.len(), 2, "{list:?}");
+    assert!(matches!(list[0], anicraft_doc::FilterEntry { filter: anicraft_doc::Filter::DropShadow { blur_x, distance, strength, color, .. }, enabled: true } if blur_x == 4.0 && distance == 6.0 && (strength - 0.6).abs() < 1e-6 && color == anicraft_doc::Rgba::hex(0x112233)), "{:?}", list[0]);
+    assert!(matches!(list[1], anicraft_doc::FilterEntry { filter: anicraft_doc::Filter::Glow { .. }, .. }), "{:?}", list[1]);
+    assert!(texts.iter().skip(1).all(|(_, f)| f.is_empty()), "the other fields have none");
+    // And the text draws through them: one filtered group, the field's items in it.
+    let dl = anicraft_doc::evaluate(&doc, 0);
+    let g = dl.groups.iter().position(|g| !g.filters.is_empty()).expect("a filtered group") as u32;
+    assert!(dl.items.iter().filter(|i| i.group == Some(g)).count() >= 2);
 }
 
 /// A small deterministic generator (xorshift), so a failing variant can be found again.
@@ -428,7 +569,8 @@ fn hostile_variants_of_every_package_never_panic() {
     let mut variants = 0;
     for case in cases() {
         let original = files(&case);
-        for (path, bytes) in original.iter().filter(|(p, _)| p.ends_with(".xml") || p.ends_with(".png") || p.ends_with(".jpg")) {
+        let media = [".xml", ".png", ".jpg", ".wav", ".mp3", ".aif", ".flv", ".dat"];
+        for (path, bytes) in original.iter().filter(|(p, _)| media.iter().any(|m| p.ends_with(m))) {
             let mut rng = Rng(0x9E37_79B9_7F4A_7C15 ^ (path.len() as u64 * 0x1000_0001) ^ (case.len() as u64) << 32);
             // Cut short at evenly spaced points (and just after the start and before the end).
             let cuts = (0..24).map(|k| bytes.len() * k / 24).chain([1, bytes.len().saturating_sub(1)]);

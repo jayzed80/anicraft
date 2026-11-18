@@ -18,7 +18,7 @@ pub fn bar(app: &mut App, ui: &mut egui::Ui) {
     let underline = app.menu_keys.show_keys;
     let mut tops = Vec::with_capacity(TOP_MENUS.len());
     egui::MenuBar::new().ui(ui, |ui| {
-        // macOS: leave room for the traffic lights over the unified title bar.
+        // Keep platform-specific spacing here if the menu row ever shares the title bar again.
         ui.add_space(platform::menu_inset());
         if platform::OS == Os::Mac {
             // The application menu, as every Mac app has (About, Settings, Quit).
@@ -423,12 +423,23 @@ fn enabled(app: &App, id: &str) -> bool {
         "edit.undo" => app.s.can_undo(),
         "edit.redo" => app.s.can_redo(),
         "edit.delete" | "edit.duplicate" | "modify.convert_to_symbol" | "modify.break_apart" | "arrange.bring_to_front" | "arrange.send_to_back" => !app.s.selection.is_empty(),
+        // Modify › Shape (ADR 0109): what the selection has for them.
+        "modify.lines_to_fills" => selected_shape(app, |sh| sh.stroke.is_some()),
+        "modify.expand_fill" => selected_shape(app, |sh| sh.fill.is_some()),
+        "modify.soften_fill_edges" => selected_shape(app, |sh| sh.fill.as_ref().is_some_and(|f| !matches!(f, anicraft_engine::doc::Paint::Bitmap { .. }))),
+        // Convert Audio to Keyframes and Auto Lip-Sync read a sound on this timeline (ADR 0114).
+        "sound.to_keyframes" | "sound.lip_sync" => app.s.timeline().layers.iter().any(|l| l.has_sounds()),
         "layer.delete" => app.s.timeline().layers.len() > 1,
         "scene.delete" => app.s.doc.scenes.len() > 1,
         // Ctrl+E opens the selected instance, or goes back to the document (ADR 0045).
         "symbol.exit" => !app.s.editing.is_empty(),
-        "symbol.edit" => !app.s.editing.is_empty() || app.s.selected_elements().iter().any(|(_, e)| matches!(e.kind, anicraft_engine::doc::ElementKind::Symbol { .. })),
+        "symbol.edit" => !app.s.editing.is_empty() || app.s.selected_elements().iter().any(|(_, e)| anicraft_engine::editing::opens(e)),
+        // Groups and Combine Objects (ADR 0073).
+        "modify.group" => !app.s.selection.is_empty(),
+        "modify.ungroup" => app.s.selected_elements().iter().any(|(_, e)| matches!(e.kind, anicraft_engine::doc::ElementKind::Group { .. })),
+        "modify.union" | "modify.intersect" | "modify.punch" | "modify.crop" => app.s.selected_elements().iter().filter(|(_, e)| matches!(e.kind, anicraft_engine::doc::ElementKind::Shape(_))).count() >= 2,
         "scene.prev" | "scene.move_up" => app.s.scene > 0,
+        "view.guides_clear" => !app.s.guides().is_empty(),
         "scene.next" | "scene.move_down" => app.s.scene + 1 < app.s.doc.scenes.len(),
         "timeline.clear_keyframe" => match app.frame_sel {
             Some(sel) => sel.has_keys(&app.s.timeline().layers),
@@ -442,11 +453,24 @@ fn enabled(app: &App, id: &str) -> bool {
     }
 }
 
+/// Whether a selected shape passes `has` (looked at only while a menu is open).
+fn selected_shape(app: &App, has: impl Fn(&anicraft_engine::doc::Shape) -> bool) -> bool {
+    app.s.selected_elements().iter().any(|(_, e)| matches!(&e.kind, anicraft_engine::doc::ElementKind::Shape(sh) if has(sh)))
+}
+
 /// Whether a registry command that switches a setting has it on (`None`: not a setting).
 fn checked(app: &App, id: &str) -> Option<bool> {
     match id {
         "draw.snap_to_objects" => Some(app.s.style.snap_objects),
         "draw.object_drawing" => Some(app.s.style.object_drawing),
+        // Rulers, grid and guides (ADR 0076).
+        "view.rulers" => Some(app.s.aids.rulers),
+        "view.grid_show" => Some(app.s.aids.show_grid),
+        "view.grid_snap" => Some(app.s.aids.snap_grid),
+        "view.guides_show" => Some(app.s.aids.show_guides),
+        "view.guides_lock" => Some(app.s.aids.lock_guides),
+        "view.guides_snap" => Some(app.s.aids.snap_guides),
+        "view.snap_pixels" => Some(app.s.aids.snap_pixels),
         _ => None,
     }
 }
@@ -531,6 +555,13 @@ fn registry_items(app: &mut App, ui: &mut egui::Ui, top: &str, cmds: &[CommandSp
             if ui_item(ui, tr!("Start Screen"), "", None) {
                 crate::start::open(app);
             }
+            // The open documents (ADR 0112): close the one shown, or all of them.
+            if ui_item(ui, tr!("Close"), app.keymap.primary("view.close_document").unwrap_or(""), None) {
+                crate::tabs::close_active(app);
+            }
+            if ui_item(ui, tr!("Close All"), app.keymap.primary("view.close_all_documents").unwrap_or(""), None) {
+                crate::tabs::close_all(app);
+            }
         }
     }
     let mut subs: Vec<&str> = Vec::new();
@@ -547,6 +578,17 @@ fn registry_items(app: &mut App, ui: &mut egui::Ui, top: &str, cmds: &[CommandSp
             ui.set_min_width(220.0);
             for spec in cmds.iter().filter(|c| c.menu == path) {
                 item(app, ui, spec);
+            }
+            // View › Snapping also has Snap to Grid and Snap to Guides, where Animate users
+            // look for them (ADR 0076); they live in View › Grid and View › Guides too.
+            // Exporter plug-ins' formats, below the built-in ones (ADR 0088).
+            if path == "File/Export" {
+                crate::plugin_export_ui::menu_items(app, ui);
+            }
+            if path == "View/Snapping" {
+                for id in ["view.grid_snap", "view.guides_snap"] {
+                    cmd_item(app, ui, id);
+                }
             }
         });
     }
@@ -604,6 +646,12 @@ pub(crate) fn menu_contents(app: &mut App, ui: &mut egui::Ui, top: &str, cmds: &
                 crate::onion::toggle_edit_multiple(app);
             }
             ui.menu_button(tr!("Onion Skin Options"), |ui| crate::onion::menu(app, ui));
+            if ui_item(ui, tr!("Parenting View"), "", Some(app.prefs.timeline_parenting)) {
+                crate::parenting::toggle_view(app);
+            }
+            if ui_item(ui, tr!("Clip Content Outside the Stage"), "", Some(app.view.clip_to_stage)) {
+                app.view.clip_to_stage = !app.view.clip_to_stage;
+            }
             if ui_item(ui, tr!("Preview Through Camera"), "", Some(app.camera_preview)) {
                 app.toggle_camera_preview();
             }
@@ -641,24 +689,55 @@ pub(crate) fn menu_contents(app: &mut App, ui: &mut egui::Ui, top: &str, cmds: &
             if ui_item(ui, tr!("Loop Playback"), "", Some(app.looping)) {
                 app.looping = !app.looping;
             }
+            // Sound while you work (ADR 0095): the listener's settings, kept in the preferences.
+            ui.separator();
+            if ui_item(ui, tr!("Mute Sounds"), "", Some(app.prefs.sound_muted)) {
+                app.prefs.sound_muted = !app.prefs.sound_muted;
+                app.save_prefs();
+            }
+            if ui_item(ui, tr!("Audio Scrubbing"), "", Some(app.prefs.audio_scrubbing)) {
+                app.prefs.audio_scrubbing = !app.prefs.audio_scrubbing;
+                app.save_prefs();
+            }
         }
         "Window" => {
-            use crate::app::BottomTab;
-            if ui_item(ui, tr!("Timeline"), "", Some(app.bottom == BottomTab::Timeline)) {
-                app.bottom = BottomTab::Timeline;
-            }
-            if ui_item(ui, tr!("Motion Editor"), "", Some(app.bottom == BottomTab::MotionEditor)) {
-                app.bottom = BottomTab::MotionEditor;
-            }
-            if ui_item(ui, tr!("Actions"), app.keymap.primary("view.actions").unwrap_or(""), Some(app.show_actions)) {
-                app.show_actions = !app.show_actions;
-            }
-            use crate::movie_explorer::DockTab;
-            if ui_item(ui, tr!("Library"), "", Some(app.explorer.tab == DockTab::Library)) {
-                app.explorer.tab = DockTab::Library;
-            }
-            if ui_item(ui, tr!("Movie Explorer"), app.keymap.primary("view.movie_explorer").unwrap_or(""), Some(app.explorer.tab == DockTab::Explorer)) {
-                crate::movie_explorer::open(app);
+            // Workspaces (ADR 0075): the built-in ones, yours, Save and Reset.
+            ui.menu_button(tr!("Workspace"), |ui| {
+                let current = app.prefs.workspaces.current.clone();
+                for key in app.prefs.workspaces.keys() {
+                    let name = crate::i18n::t_dyn(crate::dock::Workspaces::name(&key)).into_owned();
+                    if ui_item(ui, &name, "", Some(key == current)) && key != current {
+                        app.switch_workspace(&key);
+                    }
+                }
+                ui.separator();
+                if ui_item(ui, tr!("Save Workspace…"), "", None) {
+                    app.prompt = Some(crate::app::Prompt { title: tr_noop!("Save Workspace"), cmd: "view.save_workspace", key: "name", text: String::new(), focus: true });
+                }
+                if ui_item(ui, tr!("Manage Workspaces…"), "", None) {
+                    crate::workspaces_window::open(app);
+                }
+                let name = crate::i18n::t_dyn(crate::dock::Workspaces::name(&current)).into_owned();
+                if ui_item(ui, &tr!("Reset “{name}”", name = name), "", None) {
+                    app.reset_workspace();
+                }
+            });
+            ui.separator();
+            // Every panel: ticked while it is in front; choosing one brings it forward, or
+            // closes it when it already is.
+            for p in crate::dock::Panel::ALL {
+                let key = match p {
+                    crate::dock::Panel::Actions => app.keymap.primary("view.actions").unwrap_or(""),
+                    crate::dock::Panel::MovieExplorer => app.keymap.primary("view.movie_explorer").unwrap_or(""),
+                    _ => "",
+                };
+                if ui_item(ui, crate::i18n::t(p.label()), key, Some(app.panel_visible(p))) {
+                    if p == crate::dock::Panel::MovieExplorer && !app.panel_visible(p) {
+                        crate::movie_explorer::open(app);
+                    } else {
+                        app.toggle_panel(p);
+                    }
+                }
             }
             // Brush presets with previews, and your own (ADR 0068).
             if ui_item(ui, tr!("Brush Library"), "", Some(app.brush_lib.open)) {
@@ -668,11 +747,33 @@ pub(crate) fn menu_contents(app: &mut App, ui: &mut egui::Ui, top: &str, cmds: &
             if ui_item(ui, tr!("Onion Skin"), "", Some(app.onion.ghosts)) {
                 crate::onion::toggle_ghosts(app);
             }
-            ui.label(text(Type::Caption, tr!("Panels are docked: Tools, Stage, Timeline, Properties, Library and Movie Explorer")));
+            ui.label(text(Type::Caption, tr!("Drag a panel's tab to dock it on any side, stack it with others or float it")));
+            // The open documents, as in Animate's Window menu: the shown one is ticked.
+            ui.separator();
+            if ui_item(ui, tr!("Next Document"), "Ctrl+Tab", None) {
+                crate::tabs::step(app, true);
+            }
+            if ui_item(ui, tr!("Previous Document"), "Ctrl+Shift+Tab", None) {
+                crate::tabs::step(app, false);
+            }
+            for t in crate::tabs::infos(app) {
+                // A document's own name: not translated.
+                if ui_item(ui, &t.name, "", Some(t.active)) {
+                    crate::tabs::activate_id(app, t.id);
+                }
+            }
         }
         "Help" => {
             if ui_item(ui, tr!("User Guide"), "", None) {
                 app.open_user_guide();
+            }
+            // The guide at the section for the dialog in front, the focused panel or the tool
+            // in hand (F1 also counts what the pointer is over; ADR 0096).
+            if ui_item(ui, tr!("Help for This"), "F1", None) {
+                crate::context_help::help_for_this(app, ui.ctx(), false);
+            }
+            if ui_item(ui, tr!("Search the User Guide"), "", None) {
+                app.open_guide_search();
             }
             ui.separator();
             #[cfg(not(target_arch = "wasm32"))]
@@ -682,7 +783,7 @@ pub(crate) fn menu_contents(app: &mut App, ui: &mut egui::Ui, top: &str, cmds: &
             if ui_item(ui, tr!("Command Palette…"), "Ctrl+K", None) {
                 app.palette = Some(crate::dialogs::Palette::default());
             }
-            if ui_item(ui, tr!("Keyboard Shortcuts"), "F1", None) {
+            if ui_item(ui, tr!("Keyboard Shortcuts"), "Ctrl+Alt+Shift+K", None) {
                 app.show_shortcuts = true;
             }
             ui.separator();

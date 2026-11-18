@@ -20,14 +20,95 @@ bottom says which system you are on and where your settings are kept.
 
 * **Language**: the language of menus, panels and dialogs. See
   [Interface languages](#interface-languages) below.
-* **Theme**: **Follow system** (the default), **Graphite** or **High contrast**. Follow system
-  uses Graphite, and switches to High contrast while your computer asks for more contrast. The
-  note under it says what your system is asking for right now.
+* **Theme**: **Dark (Graphite)** (the default, which still switches to High contrast while
+  your computer asks for more contrast), **Follow system**, **Light** or **High contrast**.
+  Follow system is light or dark as your computer's apps are, and switches to High
+  contrast while your computer asks for more contrast; it changes within a few seconds of your
+  system, without a restart. The note under it says what your system is set to right now. A theme
+  you pick by hand stays whatever the system says, and every theme applies as soon as you click it.
+  Themes you made or downloaded are listed under these: see [Themes of your own](#themes-of-your-own).
+  * **Dark (Graphite)**: graphite panels, with colour where it means something.
+  * **Light**: light grey panels and near-black text, for bright rooms and for eyes that find dark
+    interfaces hard to read. Timeline blocks keep their colours (mint artwork, violet classic
+    tweens, amber shape tweens, sky-blue motion tweens) in deeper tones that stand out on light
+    grey.
+  * **High contrast**: see [High contrast](#high-contrast) below.
 * **Interface font** and **Data font**: the bundled typefaces, or any font installed on your
   computer. The data font shows numbers, timecode, rulers and shortcuts, so only monospaced
   families are listed for it. The **Preview** row shows both.
 * **Interface scale**: from 75 % to 200 %, on top of your system's display scaling. The new size
   applies when you let go of the slider.
+
+### Themes of your own
+
+A theme is a small text file that gives colours to the interface's **roles**: the panels, the
+text, the accent, the timeline's blocks and so on. You don't need to rebuild anything: put the
+file in the themes folder and pick it.
+
+1. Open **Preferences › Appearance › Theme** and click **Export Current Theme**. AniCraft writes
+   the look you are using, every colour of it, to `my-theme.json` in the themes folder and lists
+   it under the built-in themes.
+2. Click **Open Themes Folder** and open the file in any text editor. Change some colours, and
+   give it a name.
+3. Click **Reload**. The list is read again, and if your theme is the one in use, the whole
+   interface redraws with the new colours at once.
+
+A theme only needs the colours it changes. This one is complete:
+
+```json
+{
+  "anicraft_theme": 1,
+  "name": "Ember",
+  "author": "Your name",
+  "base": "dark",
+  "colors": {
+    "chrome": "#1a1418",
+    "panel": "#221a20",
+    "panel_alt": "#2a2028",
+    "header": "#352833",
+    "hover": "#453441",
+    "active": "#5a4354",
+    "field": "#150f13",
+    "border": "#44333f",
+    "text": "#f2e9ee",
+    "text_dim": "#c2b1bb",
+    "text_faint": "#a8959f",
+    "icon": "#c9b6c0",
+    "icon_accent": "#d6336c59",
+    "accent": "#d6336c",
+    "accent_end": "#f08c2e",
+    "accent_dim": "#5a1f38",
+    "accent_text": "#ff8fb3"
+  }
+}
+```
+
+* `anicraft_theme` is always `1` for now.
+* `base` is `dark`, `light` or `high-contrast`: the built-in theme yours starts from. Every
+  colour you leave out keeps that theme's value. Use `light` when your text is darker than your
+  panels.
+* `colors` gives each role a colour as `#rrggbb`. An exported theme lists every role there is;
+  the names say what they colour (`panel`, `text`, `accent`, `span` for a timeline span holding
+  artwork, `tween`, `playhead`, `onion_past`…).
+* **`icon_accent`** fills the closed shapes of the icons with a second colour, under their
+  outlines. Add two more digits for how solid it is (`59` is about a third), so the outline stays
+  clear. Leave it out for plain outline icons.
+* **`accent_end`** turns the thin accent bars (beside panel titles, under the active tab) into a
+  gradient from `accent` to this colour. Leave it out for a flat bar.
+
+**A theme that would be hard to read is not used.** AniCraft measures the contrast of each pair
+of colours it draws together. Text needs 4.5:1 against what it sits on, and icons and the focus
+ring need 3:1 (WCAG AA). A theme that falls short stays in the list, greyed out, with a line that
+says which colours to change, for example *"text_dim on panel has a contrast of 2.47:1; it needs
+4.5:1"*. The same happens for a mistyped role name or a colour that isn't written as `#rrggbb`: the
+theme is refused whole, never applied in part. If the theme you are using stops passing after an
+edit, AniCraft shows the built-in theme it is based on until you mend the file and click
+**Reload**.
+
+The themes folder is `themes` in the settings folder shown at the bottom of Preferences (in a
+portable copy, `data/themes` beside the app). To check a file without opening AniCraft, run
+`anicraft --check-theme my-theme.json` in a terminal; to try one for a single session,
+`anicraft --theme my-theme.json`. The browser version has the built-in themes only.
 
 ### Stage
 
@@ -45,6 +126,12 @@ bottom says which system you are on and where your settings are kept.
 Both settings are also in **View › Stage Rendering**, so you can switch without opening
 Preferences.
 
+* **Window graphics**: how the whole window is drawn. **Automatic** (the default) tries the best
+  way for your computer first and the next one if it doesn't work. If the window flickers or
+  goes black, choose another way: **DirectX 12**, **Vulkan** or **OpenGL** on Windows, **Metal**
+  or **OpenGL** on a Mac, **Vulkan** or **OpenGL** on Linux. A change takes effect the next time
+  AniCraft starts. The note below names the start-up log to attach to a bug report.
+
 ### Timeline, Test Movie, Files and Safety
 
 * **Timeline › Extra start gap** adds room before frame 1, on top of the room the playhead needs.
@@ -58,6 +145,14 @@ Preferences.
 * **Safety › Confirmations**: if you ticked "Don't ask again this session" in a confirmation,
   **Show all again** brings those questions back.
 
+### About
+
+**About** shows AniCraft's version, whether this copy is installed or portable (see
+[Portable copies](getting-started.md#portable-copies)), and every folder it keeps things in
+(preferences, autosave, logs, plug-ins, templates and the offline user guide), each with an
+**Open** button. Run from an AppImage on Linux, it also adds AniCraft to your applications menu or
+removes it again.
+
 Preferences also keep your shortcuts, onion skin options, Publish presets, recent files and
 whether the start screen shows. The start screen has its own checkbox: **Show this screen when
 AniCraft starts**.
@@ -67,7 +162,7 @@ AniCraft starts**.
 Every menu command, every tool and the view keys (zoom, onion skin, panel focus and so on) can
 have shortcuts. The full list of defaults is in [the shortcut reference](reference/shortcuts.md).
 
-Open the editor with **Help › Keyboard Shortcuts** (**F1**). Actions are grouped by menu, then
+Open the editor with **Help › Keyboard Shortcuts** (**Ctrl+Alt+Shift+K**). Actions are grouped by menu, then
 **Tools**, **View** and **Other**. Type in **Filter by name or key…** to find an action by its
 name or by the key it uses: typing `F6` shows what F6 does.
 
@@ -103,7 +198,8 @@ lists them as **fixed** and won't assign them to anything else:
 | Key | Kept for |
 |---|---|
 | **Ctrl+K**, **Ctrl+Shift+P** | the command palette |
-| **F1**, **Ctrl+Alt+Shift+K** | the shortcut editor |
+| **F1** | help for what you are pointing at (see [Using this guide](using-this-guide.md#help-for-what-youre-working-on)) |
+| **Ctrl+Alt+Shift+K** | the shortcut editor |
 | **Ctrl+U**, **Ctrl+,** | Preferences |
 | **Ctrl+Q** | quitting |
 | **Enter** | play and stop |
@@ -214,19 +310,18 @@ turn on:
 
 The **High contrast** theme is white text on black, with yellow for focus, selection and the
 active tool, and an outline on every button and field. Text reaches at least 7:1 contrast. Your
-artwork on the stage keeps its own colours. Choose **Graphite** or **High contrast** by hand to
-keep that look whatever the system says.
+artwork on the stage keeps its own colours. Choose **Dark (Graphite)**, **Light** or **High
+contrast** by hand to keep that look whatever the system says.
 
 ### Larger interface
 
 Set **Preferences › Appearance › Interface scale** up to 200 %. The stage refits, the tools column
 scrolls, and the timeline header scrolls sideways (**Shift** and the mouse wheel). To try a look
 for one session without saving it, start AniCraft from a terminal with
-`anicraft --theme high-contrast --scale 200`.
+`anicraft --theme high-contrast --scale 200` (or `--theme light`, `--theme dark`).
 
 ### Not there yet
 
-* AniCraft has one dark palette; it doesn't follow your system's light or dark setting.
 * The Motion Editor's graph needs a pointer. Its values and eases can be edited in the property
   list beside it.
 * Adding a point in Edit Envelope takes a click; existing points can be edited from the keyboard.

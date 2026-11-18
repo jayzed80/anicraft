@@ -3,7 +3,8 @@
 //!
 //! `CRAFT_FONTS_DIR=<craft-fonts checkout> cargo build` embeds the UI typefaces chosen in
 //! ADR 0005: Inter (prose) and JetBrains Mono (data), both SIL OFL 1.1. Font files are never
-//! committed to this repository. Without the variable the app uses egui's bundled defaults, and
+//! committed to this repository. It also embeds Noto Sans Georgian (`Geor` in craft-fonts) as a
+//! fallback face, which is what lets the interface offer Georgian. Without the variable the app uses egui's bundled defaults, and
 //! everything still works.
 //!
 //! `CRAFT_I18N_DIR=<craft-i18n checkout>` embeds the interface catalogs (ADR 0040); without it
@@ -12,7 +13,8 @@
 use std::path::{Path, PathBuf};
 
 /// Files we look for, and the generated constant each fills.
-const FONTS: [(&str, &str); 2] = [("Inter-Regular.ttf", "UI_FONT"), ("JetBrainsMono-Regular.ttf", "MONO_FONT")];
+const FONTS: [(&str, &str); 3] =
+    [("Inter-Regular.ttf", "UI_FONT"), ("JetBrainsMono-Regular.ttf", "MONO_FONT"), ("NotoSansGeorgian.ttf", "GEORGIAN_FONT")];
 
 fn find(dir: &Path, name: &str, depth: u32) -> Option<PathBuf> {
     let entries = std::fs::read_dir(dir).ok()?;
@@ -84,14 +86,15 @@ fn windows_icon() {
     }
 }
 
-/// The desktop-only features (ADR 0036) as cfgs: `gpu_stage` and `sound_output` are on when
-/// their feature is and the target isn't the web, so `cargo build --target wasm32-unknown-unknown`
-/// works with the default features and the web build draws on the CPU, silently.
+/// The features as cfgs: `gpu_stage` is on when its feature is and the target isn't the web
+/// (ADR 0036), so `cargo build --target wasm32-unknown-unknown` works with the default features
+/// and the web build draws on the CPU; `sound_output` is on when its feature is, on the web too
+/// (Web Audio, ADR 0095).
 fn native_features() {
     println!("cargo::rustc-check-cfg=cfg(gpu_stage, sound_output)");
     let web = std::env::var("CARGO_CFG_TARGET_ARCH").is_ok_and(|a| a == "wasm32");
-    for (feature, cfg) in [("CARGO_FEATURE_GPU_STAGE", "gpu_stage"), ("CARGO_FEATURE_SOUND_OUTPUT", "sound_output")] {
-        if std::env::var_os(feature).is_some() && !web {
+    for (feature, cfg, desktop_only) in [("CARGO_FEATURE_GPU_STAGE", "gpu_stage", true), ("CARGO_FEATURE_SOUND_OUTPUT", "sound_output", false)] {
+        if std::env::var_os(feature).is_some() && !(web && desktop_only) {
             println!("cargo::rustc-cfg={cfg}");
         }
     }

@@ -11,13 +11,15 @@ Shortcuts are written the Windows and Linux way. On macOS, use ⌘ (Command) for
 
 ## The window layout
 
-AniCraft has a single window with fixed, docked panels:
+AniCraft opens with the **Essentials** workspace: the panels docked as below. You can move
+every panel (see [Arranging panels and workspaces](#arranging-panels-and-workspaces)).
 
 | Area | Where | What it's for |
 |---|---|---|
 | Menu bar | top | Every command, grouped as in Animate: File, Edit, View, Insert, Modify, Commands, Control, Window, Help. On macOS there's also the AniCraft menu, with About, Settings… and Quit. |
-| Edit bar | above the stage | The scene menu, the path to the symbol you're editing, the active layer, the stage size, an **Onion skin** switch and the zoom menu. |
-| Tools | left | The drawing and editing tools, the **Snap to Objects** magnet, and the current fill and stroke colours. |
+| Document tabs | below the menu bar | One tab for each open document. See [Document tabs](#document-tabs). |
+| Edit bar | above the stage | The scene menu, the path to the symbol you're editing, the active layer, the stage size, an **Onion skin** switch, the **Clip content outside the stage** button and the zoom menu. |
+| Tools | left | The drawing and editing tools, the **Snap to Objects** magnet, and the current fill and stroke colours. Drag the dotted grip at the top to move them. |
 | Stage | middle | Your artwork. The stage rectangle is what the movie shows. You can draw on the grey area around it too. |
 | Timeline and Motion Editor | bottom | Layers, frames and playback. The **Motion Editor** tab beside it shows a motion tween's property curves. |
 | Properties | right, top | Settings for the current tool, then for what's selected, the document and the current frame. |
@@ -26,19 +28,85 @@ AniCraft has a single window with fixed, docked panels:
 | History | right, bottom | Every undo step. Click one to go back to it. |
 | Status bar | bottom edge | Hints and messages, the pointer's position, autosave time and how much undo history is kept. |
 
-Every section in the right-hand dock has a header you can click to fold it away and give the
-others room. You can drag the edge between the stage and the dock, and between the stage and
-the timeline, to resize them.
+Click the arrow at the left of a panel group's header to fold the group away and give the
+others room. Drag the edge between the stage and a dock, or the line between two panel groups,
+to resize them.
 
 Some things open in windows of their own, which stay open while you work:
 
-* **Window › Actions** (**F9**): what keyframes and buttons do (see
-  [Interactivity](interactivity.md)).
 * **Edit › Find and Replace** (**Ctrl+F**).
 * **File › Publish Settings…** (**Ctrl+Shift+F12**).
 * **Control › Test Movie** (**Ctrl+Enter**) plays your movie in its own window.
 
-Panels can't be undocked, rearranged or saved as workspace layouts yet.
+**Window › Actions** (**F9**) opens the Actions panel floating in a window of its own (see
+[Interactivity](interactivity.md)); you can dock it like any other panel.
+
+## Arranging panels and workspaces
+
+Every panel can go anywhere: Tools, Properties, Align, Colour, Swatches, Library, Movie
+Explorer, History, Layer Depth, Timeline, Motion Editor, Actions and Output.
+
+* **Move a panel** by dragging its tab. While you drag, a blue area shows where it will go:
+  * onto another group's header, or onto a floating window: it joins that group or window as
+    a tab;
+  * onto the top or bottom half of a group (left or right half below and above the stage): a
+    group of its own just there;
+  * near an edge of the stage: a dock on that side. This is how you put the **timeline above
+    the stage**: drag its tab to the top of the stage;
+  * anywhere else: it floats in a window of its own.
+
+  Press **Esc** while dragging to leave everything as it was.
+* **Use the panel menu** (the ☰ button at the right of each group's header, or right-click a
+  tab) to do the same without dragging: dock a panel on any side, float it, **Stack With**
+  another group or floating window, fold its group, collapse its dock to icons, close it or
+  close the whole tab group. The menu works from the keyboard too: **Tab** to the ☰ button and
+  press **Enter**.
+* **Move the tools** by dragging the dotted grip at the top of the tools bar (or click it for
+  its menu). Near an edge of the stage they become a slim bar on that side, above or below
+  the stage as a row; dropped on a group they become a tab there, laid out in as many columns
+  as fit; anywhere else they float.
+* **Floating windows** have their own window on the desktop, which you can put on another
+  screen. They can hold **several panels as tabs**: drag a tab onto a floating window, or use
+  **Stack With**. Drag a tab out of the window to move just that panel; drag the window's
+  dotted grip (or, inside the AniCraft window, its title bar) to move **the whole window back
+  into a dock**, with the same blue drop areas. **Dock** puts its panels back where they came
+  from. Your shortcuts with Ctrl or Alt (Undo, Save, Test Movie…) still work there. Where a
+  system can't open another window (the web version), a floating window floats inside the
+  AniCraft window instead.
+* **Collapse a dock to icons** with the » button on its first group's header (or **Collapse
+  the Dock to Icons** in the panel menu). The dock shrinks to a strip of panel icons, so the
+  stage gets the room; hold the pointer over an icon for the panel's name. Click an icon to
+  open its panel over the stage; **Esc** or a click anywhere else closes it again. The button
+  at the top of the strip expands the dock as it was. **Window** opens a collapsed panel the
+  same way.
+* **Close a panel** from its menu, or from its floating window. **Window** lists every panel,
+  ticked while it's on screen; choose one to bring it forward (it reopens where it was), or
+  choose a ticked one to close it.
+
+Panels work at any width. When a dock is narrow, a setting whose value doesn't fit beside its
+name goes under it, and lists and fields get narrower, so nothing is cut off at the edge.
+
+**Ctrl+F6** moves the keyboard from panel to panel in the order they are docked (the stage,
+the docks above, below and to the right and left of it, floating panels inside the window,
+then the tools). In a dock collapsed to icons it lands on the first icon, or on the panel open
+over the stage. Panels in a window of their own have their own keyboard.
+
+### Workspaces
+
+A workspace is a named arrangement of the panels. **Window › Workspace** has three:
+
+| Workspace | What it's for |
+|---|---|
+| **Essentials** | The layout above. |
+| **Animator** | A tall timeline, with the Output and History beside it, and a slim right dock. |
+| **Designer** | A wide Properties panel with Colour and Align under it, and a short timeline. |
+
+Each workspace remembers how you changed it, until you choose **Window › Workspace › Reset**.
+**Save Workspace…** keeps the current arrangement under a name of your own; it's listed with
+the others, and Reset brings it back as you saved it. **Manage Workspaces…** lists them all:
+rename or delete your own (delete asks with a second click, as it can't be undone), and reset
+any that changed. The built-in ones can be reset but not renamed or deleted. Your workspaces
+and where every panel is are kept in your preferences, so AniCraft opens the way you left it.
 
 ### Properties
 
@@ -55,11 +123,62 @@ Properties changes with what you're doing, from top to bottom:
 
 Changes show on the stage as you drag a value, and each drag is a single undo step.
 
+### Colour and Output
+
+**Colour** sets the stroke and fill colours new shapes and text use; with something selected,
+a change also recolours the selection (one undo step). **Swap** exchanges the two, and **Black
+and White** sets a black stroke and a white fill. **Output** shows what the running Test Movie
+writes (its `trace` actions, frame-script logs and anything that couldn't run), and keeps the
+last run's lines after Test Movie closes.
+
 ### The Window menu
 
-The **Window** menu switches between the tabs and panels: **Timeline** and **Motion Editor**
-(the bottom tabs), **Actions** (**F9**), **Library** and **Movie Explorer** (**Alt+F3**), and
-**Onion Skin**.
+The **Window** menu has the workspaces, every panel (**Actions** is **F9**, **Movie Explorer**
+**Alt+F3**), the **Brush Library** and **Onion Skin**. At the bottom are **Next Document**,
+**Previous Document** and the open documents, with a tick by the one you're looking at.
+
+## Document tabs
+
+You can have several documents open at once. Each one has a tab below the menu bar, as in
+Animate.
+
+![Three documents open in tabs, the third with unsaved changes](images/document-tabs.png)
+
+* **Click** a tab to show its document. Every panel then shows that document.
+* A **dot** before the name means the document has changes you haven't saved.
+* Click the **×** on a tab to close it, or **middle-click** the tab.
+* **Drag** a tab left or right to put the tabs in another order.
+* **Right-click** a tab for **Close**, **Close Others**, **Close All**, and a command that
+  shows the file in your system's file manager.
+* Hold the pointer over a tab to see where its file is.
+
+| To | Press |
+|---|---|
+| Show the next document | **Ctrl+Tab** or **Ctrl+PageDown** |
+| Show the previous document | **Ctrl+Shift+Tab** or **Ctrl+PageUp** |
+| Close the document | **Ctrl+W** (**File › Close**) |
+| Close every document | **Ctrl+Alt+W** (**File › Close All**) |
+
+On a Mac, the tab keys use the Control key, because ⌘+Tab switches apps.
+
+Each document keeps its own undo history, selection, playhead, zoom and scroll position, so
+you find it as you left it. Your tools, colours and panel layout stay the same from one
+document to the next.
+
+**File › New**, **File › Open**, a recent file and a file dropped on the window each open in
+a new tab. If the file is already open, AniCraft shows its tab instead. The sample animation
+that AniCraft starts with makes way for the first document you open, as long as you haven't
+changed it.
+
+To move artwork between documents, copy it in one (**Ctrl+C**), show the other and paste
+(**Ctrl+V**). Symbols, images and sounds the artwork uses come along into the other
+document's Library. See [Symbols and the Library](symbols-and-library.md#copying-between-documents).
+
+When you close a tab that has unsaved changes, AniCraft asks whether to save them. When you
+quit, it asks once and lists every document with unsaved changes. Closing the last document
+leaves an empty one and shows the start screen.
+
+You can have up to 32 documents open.
 
 ## The command palette
 
@@ -70,7 +189,7 @@ and **Enter** to run it. Installed plug-ins show up here too.
 
 It's the fastest way to reach anything when you don't remember which menu it lives in.
 
-For a list of every shortcut, choose **Help › Keyboard Shortcuts** (**F1**). That sheet also
+For a list of every shortcut, choose **Help › Keyboard Shortcuts** (**Ctrl+Alt+Shift+K**). That sheet also
 lets you change them (see [Preferences, shortcuts and accessibility](preferences-shortcuts-accessibility.md)).
 
 ## Moving around the stage
@@ -90,16 +209,29 @@ lets you change them (see [Preferences, shortcuts and accessibility](preferences
 | Zoom out | **View › Zoom Out** (**Ctrl+-**), or **Alt**-click with the Zoom tool |
 | Fit the whole stage in the window | **View › Fit in Window** (**Ctrl+0**, or **Ctrl+2**) |
 | See the stage at actual size | **View › 100%** (**Ctrl+1**) |
-| Jump to a set zoom | the zoom menu at the right of the edit bar: Fit in window, 25 % to 800 % |
+| Jump to a set zoom | the arrow beside the zoom field at the right of the edit bar: Fit in window, 25 % to 800 % |
+| Type a zoom | click the zoom field, type a percentage (5 to 6400) and press **Enter** |
+
+### The pasteboard
+
+The grey area around the stage is the **pasteboard**. You can draw, paste and park artwork
+there, as in Animate: notes for yourself, spare drawings, or a background wider than the stage
+that a tween slides across. Only what is on the stage shows in Test Movie and in exports.
+
+To hide everything outside the stage while you work, click **Clip content outside the stage**
+(the frame with crop marks, left of the zoom menu), or choose **View › Clip Content Outside the
+Stage**. The artwork is still there; click again to see it.
 
 ### Rulers, grids and guides
 
-AniCraft doesn't have rulers, a grid or draggable guides yet. Until then:
+**View › Rulers** (**Ctrl+Alt+Shift+R**) puts rulers along the top and left of the stage, in
+pixels from its top-left corner. Drag from a ruler to make a guide. **View › Grid** shows a
+grid and **View › Guides** shows, locks and edits guides; all of them snap. See
+[Drawing](drawing.md#rulers-grid-and-guides).
 
 * The status bar shows the pointer's position on the stage (**x** and **y**, in pixels).
 * **Properties** shows and sets the exact position and size of what's selected.
 * The **Align** panel lines things up with each other or with the stage.
-* **Snap to Objects** snaps points to other artwork.
 * Templates put their layout guides on a guide layer, which you can draw on yourself:
   anything on a guide layer shows while you work but never exports (see
   [Timeline](timeline.md)).
@@ -156,7 +288,7 @@ exactly as the movie will frame it. While the preview is on you can't edit artwo
 A movie can be split into scenes that play one after another. Each scene has its own
 timeline. Use the scene menu at the left of the edit bar to switch scenes and to manage them:
 
-* **Insert › Scene** adds a new scene.
+* **Insert › New Scene** adds a new scene.
 * **Modify › Scene** has **Duplicate Scene**, **Rename Scene**, **Delete Scene**, **Move
   Scene Earlier** and **Move Scene Later**.
 * **Control › Previous Scene** (**Shift+Page Up**) and **Control › Next Scene**
@@ -214,6 +346,10 @@ changes your document, including Properties edits, timeline changes and Library 
 drag is always a single step. The **History** panel at the bottom of the dock lists the steps
 by name. Click any step to jump back to it, and click a later (dimmed) one to go forward
 again.
+
+To keep steps you repeat, **Ctrl+click** them in the History panel and choose **Save As
+Command…**: they come back at the end of the Commands menu, to run on any selection as one step.
+See [Saved commands](saved-commands.md).
 
 Undo history is kept in memory while the document is open. It isn't saved with the file.
 

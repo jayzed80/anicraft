@@ -5,7 +5,11 @@
 //! Camera tool, a drag pans the camera, the round handle above the frame turns it, and the
 //! wheel zooms it; each drag (or burst of wheel turns) is one undo step. With View › Preview
 //! Through Camera the stage shows the movie's picture instead: there a drag moves the picture
-//! under the pointer (the camera the other way), as panning a view does.
+//! under the pointer (the camera the other way), as panning a view does, and the Selection
+//! tool picks and drags artwork where the movie shows it (ADR 0082): the press picks through
+//! the camera (`element.pick {view: camera}`), and each move is mapped back to the stage
+//! through the inverse of the picked layer's view (camera and depth), so the artwork follows
+//! the pointer on the picture.
 
 use crate::app::{App, Drag, Tool};
 use crate::theme::to_color32;
@@ -42,7 +46,7 @@ pub fn camera(app: &App) -> Option<Camera> {
 
 /// Whether the stage shows the movie through the camera this frame.
 pub fn previewing(app: &App) -> bool {
-    app.camera_preview && app.s.timeline().camera_layer().is_some()
+    app.camera_preview && app.s.timeline().camera_layer().is_some_and(|l| l.visible)
 }
 
 /// Picking the Camera tool adds a camera when the scene has none (as Animate does), once per
@@ -170,5 +174,69 @@ pub fn draw(app: &App, painter: &egui::Painter, g: &Geo, hot: Option<Pos2>) {
         painter.line_segment([edge, knob], Stroke::new(1.5, color));
         let hot = hot.is_some_and(|p| p.distance(knob) <= KNOB_GRAB);
         painter.circle(knob, if hot { 6.5 } else { 5.5 }, Color32::WHITE, Stroke::new(1.5, color));
+    }
+}
+
+/// A Selection tool press on the camera preview at picture point `at`: picks what the movie
+/// shows there and, on artwork, starts moving the selection (one undo step).
+pub fn select_press(app: &mut App, at: Vec2, add: bool) -> Drag {
+    app.bone_sel = None;
+    let hit = app.run("element.pick", json!({"x": at.x, "y": at.y, "add": add, "view": "camera"}));
+    if hit.is_none_or(|v| v["element"].is_null()) || app.s.selection.is_empty() {
+        return Drag::None;
+    }
+    app.s.begin_gesture(tr_noop!("Move"));
+    Drag::CameraMove { last: at }
+}
+
+/// Continues a move on the preview to picture point `cur`: the picture's step mapped back to
+/// the stage through the active layer's view, so the artwork stays under the pointer.
+pub fn move_to(app: &mut App, last: &mut Vec2, cur: Vec2) {
+    let d = cur - *last;
+    if d.length() <= 0.0 {
+        return;
+    }
+    *last = cur;
+    let back = app.s.camera_view(app.s.layer).and_then(|v| v.inverse()).unwrap_or(Affine::IDENTITY);
+    let s = back.apply_vector(d);
+    if s.x.is_finite() && s.y.is_finite() {
+        app.run("element.translate", json!({"dx": s.x, "dy": s.y}));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_app() -> App {
+        let ctx = egui::Context::default();
+        let session = anicraft_engine::Session::new(anicraft_engine::doc::Document::default());
+        App::with_context(&ctx, session, Some(std::path::PathBuf::from("unused.png")))
+    }
+
+    #[test]
+    fn previewing_requires_visible_camera_layer() {
+        let mut app = test_app();
+        assert!(!previewing(&app));
+
+        // Toggle camera preview on before camera exists.
+        app.toggle_camera_preview();
+        assert!(app.camera_preview);
+        assert!(!previewing(&app), "previewing is false when no camera layer exists");
+
+        // Add camera.
+        assert!(app.run("camera.add", json!({})).is_some());
+        assert!(previewing(&app), "previewing is true when camera layer is visible and camera_preview is on");
+
+        // Hide camera layer: camera is turned off, so previewing must be false (artwork editing unpaused).
+        let cam_id = app.s.timeline().camera_layer().expect("camera layer").id;
+        assert!(app.run("layer.toggle_visible", json!({"layer": cam_id.0})).is_some());
+        assert!(!app.s.timeline().camera_layer().expect("camera layer").visible);
+        assert!(!previewing(&app), "hiding the camera layer turns off camera preview so artwork can be edited");
+
+        // Unhide camera layer: camera preview returns.
+        assert!(app.run("layer.toggle_visible", json!({"layer": cam_id.0})).is_some());
+        assert!(app.s.timeline().camera_layer().expect("camera layer").visible);
+        assert!(previewing(&app), "unhiding the camera layer restores camera preview");
     }
 }

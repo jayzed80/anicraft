@@ -1,16 +1,16 @@
 //! Design tokens. Every colour, radius and target size in the shell comes from here
 //! (docs/ui-guidelines.md).
 //!
-//! The look (ADR 0008): graphite neutrals, geometric controls, borders only where they separate
+//! Three palettes share these roles: Graphite (dark, the default), Light (ADR 0077) and high
+//! contrast (ADR 0022). The look (ADR 0008): graphite neutrals, geometric controls, borders only where they separate
 //! layout regions, flat buttons, and vibrant colour spent where it carries meaning (timeline
 //! blocks, playhead, selection). Corners follow the role of a shape, not one global value:
 //! structure is square, controls are softened slightly, floating surfaces are rounder.
 
-use crate::a11y::Named;
 use egui::{Color32, CornerRadius, Shadow, Stroke, Visuals};
 use std::sync::atomic::{AtomicU8, Ordering};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tokens {
     /// Menu bar, status bar: the frame around the work.
     pub chrome: Color32,
@@ -28,6 +28,10 @@ pub struct Tokens {
     pub icon: Color32,
     /// Icons under the pointer.
     pub icon_hot: Color32,
+    /// The tint inside an icon's closed shapes, under its outline (ADR 0117): two-tone icons for
+    /// themes that want colour in them. Fully transparent, as in the built-in palettes: outlines
+    /// only. Drawn only under icons in the icon roles (`icon`, `icon_hot`, `on_active`).
+    pub icon_accent: Color32,
     /// Inset surfaces: text and number fields.
     pub field: Color32,
     /// Lines between layout regions and around popups.
@@ -42,6 +46,10 @@ pub struct Tokens {
     /// Selection, focus, active tool.
     pub accent: Color32,
     pub accent_dim: Color32,
+    /// Where an accent bar ends (ADR 0117): the bars that mark structure (a section band's edge,
+    /// the active tab's line, a picked row's edge) run from `accent` to this along their length.
+    /// The same as `accent` in the built-in palettes: a flat bar.
+    pub accent_end: Color32,
     /// Accent-coloured text (the current frame, links, prompts): the accent lightened until it
     /// reads at 4.5:1 on the panels.
     pub accent_text: Color32,
@@ -94,6 +102,20 @@ pub struct Tokens {
     /// Buttons and fields carry a visible `control_edge` (WCAG 1.4.11: a control's boundary at
     /// 3:1). Off in the graphite look, where fills and hover carry it; on in high contrast.
     pub control_outline: bool,
+    /// A light-on-dark palette (Graphite, high contrast) or dark-on-light (Light, ADR 0077): which
+    /// of egui's base looks the widgets start from (text cursor, scroll bars, resize grips).
+    pub dark: bool,
+    /// Buttons and fields carry a hairline in `border` at rest: the light look, where a flat grey
+    /// on a light panel would read as a printed box rather than a control.
+    pub control_hairline: bool,
+    /// Timeline: the tint on every fifth frame column (a whisper of light on dark, of shade on
+    /// light).
+    pub cell_tint: Color32,
+    /// The line around the stage, where it meets the pasteboard.
+    pub stage_edge: Color32,
+    /// Opacity of the shadow under windows and under menus and tooltips (black).
+    pub window_shadow: u8,
+    pub popup_shadow: u8,
     /// Corner radii by role (see `Shape` below).
     pub radius_control: u8,
     pub radius_menu: u8,
@@ -122,6 +144,7 @@ pub const GRAPHITE: Tokens = Tokens {
     on_active: Color32::WHITE,
     icon: Color32::from_rgb(0xb4, 0xb4, 0xbc),
     icon_hot: Color32::WHITE,
+    icon_accent: Color32::TRANSPARENT,
     field: Color32::from_rgb(0x0e, 0x0e, 0x11),
     border: Color32::from_rgb(0x36, 0x36, 0x3e),
     control_edge: Color32::from_rgb(0x78, 0x78, 0x82),
@@ -131,6 +154,7 @@ pub const GRAPHITE: Tokens = Tokens {
     // ≥ 4.5:1 on every surface up to `header`, so even hints stay readable.
     text_faint: Color32::from_rgb(0x98, 0x98, 0xa2),
     accent: Color32::from_rgb(0x2e, 0x66, 0xf0),
+    accent_end: Color32::from_rgb(0x2e, 0x66, 0xf0),
     accent_dim: Color32::from_rgb(0x1f, 0x35, 0x70),
     accent_text: Color32::from_rgb(0x6f, 0x97, 0xff),
     on_fill: Color32::WHITE,
@@ -161,6 +185,12 @@ pub const GRAPHITE: Tokens = Tokens {
     kind_movie_clip: Color32::from_rgb(0x5a, 0x8f, 0xff),
     kind_button: Color32::from_rgb(0xff, 0xb5, 0x3d),
     control_outline: false,
+    dark: true,
+    control_hairline: false,
+    cell_tint: Color32::from_rgba_premultiplied(6, 6, 6, 6),
+    stage_edge: Color32::from_black_alpha(160),
+    window_shadow: 150,
+    popup_shadow: 130,
     radius_control: 3,
     radius_menu: 6,
     radius_window: 10,
@@ -180,6 +210,7 @@ pub const HIGH_CONTRAST: Tokens = Tokens {
     on_active: Color32::from_rgb(0x00, 0x00, 0x00),
     icon: Color32::from_rgb(0xff, 0xff, 0xff),
     icon_hot: Color32::from_rgb(0xff, 0xd8, 0x1a),
+    icon_accent: Color32::TRANSPARENT,
     field: Color32::from_rgb(0x00, 0x00, 0x00),
     border: Color32::from_rgb(0x9a, 0x9a, 0x9a),
     control_edge: Color32::from_rgb(0xd6, 0xd6, 0xd6),
@@ -188,6 +219,7 @@ pub const HIGH_CONTRAST: Tokens = Tokens {
     text_dim: Color32::from_rgb(0xe8, 0xe8, 0xe8),
     text_faint: Color32::from_rgb(0xc8, 0xc8, 0xc8),
     accent: Color32::from_rgb(0xff, 0xd8, 0x1a),
+    accent_end: Color32::from_rgb(0xff, 0xd8, 0x1a),
     accent_dim: Color32::from_rgb(0x4d, 0x3d, 0x00),
     accent_text: Color32::from_rgb(0xff, 0xd8, 0x1a),
     on_fill: Color32::from_rgb(0x00, 0x00, 0x00),
@@ -219,6 +251,83 @@ pub const HIGH_CONTRAST: Tokens = Tokens {
     kind_movie_clip: Color32::from_rgb(0x85, 0xad, 0xff),
     kind_button: Color32::from_rgb(0xff, 0xc8, 0x5c),
     control_outline: true,
+    dark: true,
+    control_hairline: false,
+    cell_tint: Color32::from_rgba_premultiplied(6, 6, 6, 6),
+    stage_edge: Color32::from_black_alpha(160),
+    window_shadow: 150,
+    popup_shadow: 130,
+    radius_control: 3,
+    radius_menu: 6,
+    radius_window: 10,
+};
+
+/// A colour written as a hex triplet, `0xrrggbb`, as the light palette is specified (ADR 0077).
+const fn rgb(hex: u32) -> Color32 {
+    Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
+}
+
+/// The light look (ADR 0077): designed for daylight, not the dark one inverted. Cool paper greys
+/// a step apart (the frame darkest, raised surfaces lightest, fields white), near-black ink for
+/// text, hairlines on controls, soft shadows. Colour still goes where it means something, but in
+/// deeper mid-tones: the timeline's mint, violet, amber and sky blocks sit at 3:1 against the
+/// panels and keep dark marks at 4.5:1, the same rules Graphite meets.
+pub const LIGHT: Tokens = Tokens {
+    chrome: rgb(0xe1e1e6),
+    panel: rgb(0xf0f0f3),
+    panel_alt: rgb(0xf8f8fa),
+    header: rgb(0xe3e3e8),
+    hover: rgb(0xd5d5dc),
+    active: rgb(0xd0dcfa),
+    on_active: rgb(0x0b1f5c),
+    icon: rgb(0x4c4c56),
+    icon_hot: rgb(0x101014),
+    icon_accent: Color32::TRANSPARENT,
+    field: rgb(0xffffff),
+    border: rgb(0xc9c9d1),
+    control_edge: rgb(0x7a7a85),
+    separator: rgb(0xdfdfe5),
+    text: rgb(0x17171b),
+    text_dim: rgb(0x44444d),
+    text_faint: rgb(0x5c5c66),
+    accent: rgb(0x2457e0),
+    accent_end: rgb(0x2457e0),
+    accent_dim: rgb(0xd3dffb),
+    accent_text: rgb(0x1d4ccc),
+    on_fill: rgb(0xffffff),
+    ink: rgb(0x101014),
+    pasteboard: rgb(0xd2d2d9),
+    stage_shadow: Color32::from_black_alpha(34),
+    span: rgb(0x15957d),
+    span_empty: rgb(0xdbdbe2),
+    row_active: rgb(0xe2e8f7),
+    tween: rgb(0x8f6cf5),
+    tween_shape: rgb(0xb97a12),
+    tween_motion: rgb(0x2e8fcf),
+    waveform: rgb(0x1a5ca8),
+    tween_line: rgb(0x101014),
+    playhead: rgb(0xe8463a),
+    selection: rgb(0x2457e0),
+    danger: rgb(0xc42e26),
+    error: rgb(0xb8261c),
+    ok: rgb(0x126e3e),
+    hint_unplaced: rgb(0xf05582),
+    hint_start: rgb(0xf2a51f),
+    hint_end: rgb(0x2fc88c),
+    onion_past: rgb(0x2f6ce6),
+    onion_future: rgb(0x1f9a50),
+    slice_guide: rgb(0xc42fb0),
+    hit_area: rgb(0x13b07a),
+    kind_graphic: rgb(0x128a74),
+    kind_movie_clip: rgb(0x2f62d8),
+    kind_button: rgb(0xb06c08),
+    control_outline: false,
+    dark: false,
+    control_hairline: true,
+    cell_tint: Color32::from_black_alpha(9),
+    stage_edge: Color32::from_black_alpha(70),
+    window_shadow: 46,
+    popup_shadow: 40,
     radius_control: 3,
     radius_menu: 6,
     radius_window: 10,
@@ -227,14 +336,19 @@ pub const HIGH_CONTRAST: Tokens = Tokens {
 /// Which palette the interface uses (Preferences › Appearance › Theme).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Palette {
+    /// Dark (Graphite), the default look. (Saved under its old name, so older files still open.)
     #[default]
     Graphite,
     HighContrast,
+    /// Light (ADR 0077).
+    Light,
 }
 
 impl Palette {
-    pub const ALL: [(Palette, &'static str, &'static str); 2] = [
-        (Palette::Graphite, tr_noop!("Graphite"), tr_noop!("The standard dark look: graphite panels, colour where it means something.")),
+    /// The palettes Preferences offers, in the order it lists them: name and a one-line note.
+    pub const ALL: [(Palette, &'static str, &'static str); 3] = [
+        (Palette::Graphite, tr_noop!("Dark (Graphite)"), tr_noop!("The standard dark look: graphite panels, colour where it means something.")),
+        (Palette::Light, tr_noop!("Light"), tr_noop!("Light grey panels and dark text, for bright rooms and eyes that find dark interfaces hard.")),
         (Palette::HighContrast, tr_noop!("High contrast"), tr_noop!("White text on black, a yellow focus and selection colour, outlined controls.")),
     ];
 
@@ -242,18 +356,122 @@ impl Palette {
         match self {
             Palette::Graphite => &GRAPHITE,
             Palette::HighContrast => &HIGH_CONTRAST,
+            Palette::Light => &LIGHT,
+        }
+    }
+
+    fn index(self) -> u8 {
+        match self {
+            Palette::Graphite => 0,
+            Palette::HighContrast => 1,
+            Palette::Light => 2,
         }
     }
 }
 
 /// The palette in use. Process-wide view state, like the interface scale: one window, one look.
+/// With [`USER_LOOK`] set, a theme of the user's is drawn over that palette (ADR 0117).
+#[cfg(not(test))]
 static ACTIVE: AtomicU8 = AtomicU8::new(0);
 
+// Tests run side by side on threads of one process, each with its own app: each keeps its own
+// palette, so switching themes in one never shows in another.
+#[cfg(test)]
+thread_local! {
+    static ACTIVE: AtomicU8 = const { AtomicU8::new(0) };
+    static USER: std::cell::Cell<Option<&'static Tokens>> = const { std::cell::Cell::new(None) };
+}
+
+/// Set in [`ACTIVE`] while a theme of the user's is drawn; the low bits stay its base palette.
+const USER_LOOK: u8 = 0x80;
+
+fn active() -> u8 {
+    #[cfg(not(test))]
+    return ACTIVE.load(Ordering::Relaxed);
+    #[cfg(test)]
+    return ACTIVE.with(|a| a.load(Ordering::Relaxed));
+}
+
+fn set_active(i: u8) {
+    #[cfg(not(test))]
+    ACTIVE.store(i, Ordering::Relaxed);
+    #[cfg(test)]
+    ACTIVE.with(|a| a.store(i, Ordering::Relaxed));
+}
+
+/// The user's theme in use (ADR 0117). Tokens are read tens of thousands of times a frame, from
+/// any thread, as plain references: each set of tokens ever applied is kept for the life of the
+/// program (a few hundred bytes; the same tokens are kept once), the one in use sits behind a
+/// lock, and each thread remembers it until the count says it changed, so reading takes no lock.
+#[cfg(not(test))]
+mod user_look {
+    use super::Tokens;
+    use std::cell::Cell;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    static KEPT: Mutex<Vec<&'static Tokens>> = Mutex::new(Vec::new());
+    static NOW: Mutex<Option<&'static Tokens>> = Mutex::new(None);
+    static CHANGES: AtomicU32 = AtomicU32::new(0);
+    thread_local! {
+        static SEEN: Cell<(u32, Option<&'static Tokens>)> = const { Cell::new((0, None)) };
+    }
+
+    pub fn get() -> Option<&'static Tokens> {
+        let changes = CHANGES.load(Ordering::Acquire);
+        SEEN.with(|seen| {
+            let (at, tokens) = seen.get();
+            if at == changes {
+                return tokens;
+            }
+            let tokens = NOW.lock().map_or(None, |now| *now);
+            seen.set((changes, tokens));
+            tokens
+        })
+    }
+
+    pub fn set(tokens: Tokens) {
+        let kept: Option<&'static Tokens> = KEPT.lock().ok().map(|mut all| match all.iter().find(|t| ***t == tokens) {
+            Some(t) => *t,
+            None => {
+                let t: &'static Tokens = Box::leak(Box::new(tokens));
+                all.push(t);
+                t
+            }
+        });
+        if let Ok(mut now) = NOW.lock() {
+            *now = kept;
+            // Counted under the lock: a thread that sees the new count reads the new tokens.
+            CHANGES.fetch_add(1, Ordering::Release);
+        }
+    }
+}
+
+#[cfg(test)]
+mod user_look {
+    use super::Tokens;
+
+    pub fn get() -> Option<&'static Tokens> {
+        super::USER.with(|u| u.get())
+    }
+
+    pub fn set(tokens: Tokens) {
+        super::USER.with(|u| u.set(Some(Box::leak(Box::new(tokens)))));
+    }
+}
+
+/// The built-in palette in use, or the one the user's theme in use is based on.
 pub fn palette() -> Palette {
-    match ACTIVE.load(Ordering::Relaxed) {
+    match active() & !USER_LOOK {
         1 => Palette::HighContrast,
+        2 => Palette::Light,
         _ => Palette::Graphite,
     }
+}
+
+/// Whether a theme of the user's is drawn (ADR 0117), rather than a built-in palette.
+pub fn user_theme_active() -> bool {
+    active() & USER_LOOK != 0
 }
 
 /// The tokens of the palette in use, read as `T.panel` or `T.rc()`. A palette change shows from
@@ -263,6 +481,11 @@ pub struct ActiveTokens;
 impl std::ops::Deref for ActiveTokens {
     type Target = Tokens;
     fn deref(&self) -> &Tokens {
+        if user_theme_active()
+            && let Some(t) = user_look::get()
+        {
+            return t;
+        }
         palette().tokens()
     }
 }
@@ -276,8 +499,250 @@ impl Tokens {
     }
 }
 
+/// The colour roles by name, in the order `Tokens` lists them: what a theme file may set (ADR
+/// 0117) and what Export Current Theme writes. One list, so a role can't be read but not written.
+macro_rules! colour_roles {
+    ($($role:ident),* $(,)?) => {
+        /// Every colour role's name.
+        pub const COLOUR_ROLES: &[&str] = &[$(stringify!($role)),*];
+
+        impl Tokens {
+            /// The colour of the role named `role`.
+            pub fn colour(&self, role: &str) -> Option<Color32> {
+                match role {
+                    $(stringify!($role) => Some(self.$role),)*
+                    _ => None,
+                }
+            }
+
+            /// Sets the role named `role`; false when there is no such role.
+            pub fn set_colour(&mut self, role: &str, colour: Color32) -> bool {
+                match role {
+                    $(stringify!($role) => self.$role = colour,)*
+                    _ => return false,
+                }
+                true
+            }
+        }
+    };
+}
+
+colour_roles!(
+    chrome,
+    panel,
+    panel_alt,
+    header,
+    hover,
+    active,
+    on_active,
+    icon,
+    icon_hot,
+    icon_accent,
+    field,
+    border,
+    control_edge,
+    separator,
+    text,
+    text_dim,
+    text_faint,
+    accent,
+    accent_dim,
+    accent_end,
+    accent_text,
+    on_fill,
+    ink,
+    pasteboard,
+    stage_shadow,
+    span,
+    span_empty,
+    row_active,
+    tween,
+    tween_shape,
+    tween_motion,
+    waveform,
+    tween_line,
+    playhead,
+    selection,
+    danger,
+    error,
+    ok,
+    hint_unplaced,
+    hint_start,
+    hint_end,
+    onion_past,
+    onion_future,
+    slice_guide,
+    hit_area,
+    kind_graphic,
+    kind_movie_clip,
+    kind_button,
+    cell_tint,
+    stage_edge,
+);
+
+/// The roles that may be see-through (shadows, tints and the icon fill, laid over what is under
+/// them). Every other role is a surface, a text colour or a mark and must be solid: a contrast
+/// ratio means nothing against a colour you can see through.
+pub const TRANSLUCENT_ROLES: &[&str] = &["icon_accent", "stage_shadow", "cell_tint", "stage_edge"];
+
+/// A colour as a theme file writes it (ADR 0117): red, green, blue and opacity, 0 to 255.
+pub fn role_colour(r: u8, g: u8, b: u8, a: u8) -> Color32 {
+    Color32::from_rgba_unmultiplied(r, g, b, a)
+}
+
+/// WCAG 2.x contrast ratio of two solid colours (relative luminance, 1:1 to 21:1).
+pub fn contrast(a: Color32, b: Color32) -> f32 {
+    let lum = |c: Color32| {
+        let ch = |v: u8| {
+            let s = f32::from(v) / 255.0;
+            if s <= 0.040_45 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) }
+        };
+        0.2126 * ch(c.r()) + 0.7152 * ch(c.g()) + 0.0722 * ch(c.b())
+    };
+    let (x, y) = (lum(a), lum(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
+
+/// `over` laid on the solid colour `under`, as the painter blends it.
+pub fn laid_over(over: Color32, under: Color32) -> Color32 {
+    let keep = 255 - u16::from(over.a());
+    let mix = |o: u8, u: u8| (u16::from(o) + (u16::from(u) * keep + 127) / 255).min(255) as u8;
+    Color32::from_rgb(mix(over.r(), under.r()), mix(over.g(), under.g()), mix(over.b(), under.b()))
+}
+
+/// Which bar a palette is held to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Standard {
+    /// The built-in palettes: WCAG AA and the stricter house rules (body text at 7:1).
+    House,
+    /// A theme of the user's (ADR 0117): WCAG AA, text 4.5:1 and what identifies a control 3:1.
+    Aa,
+}
+
+/// A pair of roles drawn together that doesn't reach the contrast it needs.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Shortfall {
+    /// The roles, by name: `text_dim on panel`.
+    pub pair: String,
+    pub ratio: f32,
+    pub needs: f32,
+    /// Text, icons and the focus ring: without them the interface can't be read or used, so a
+    /// user's theme that falls short here is refused. The rest (blocks against the grid, control
+    /// edges) is reported, not refused.
+    pub required: bool,
+}
+
+/// Every pair of roles a palette draws together, with the ratio it must reach: text 4.5:1 (WCAG
+/// 1.4.3 AA; the timeline's small numbers are small text too), UI components and focus 3:1
+/// (1.4.11). The built-in palettes also meet stricter house rules. Returns the pairs that fall
+/// short of `standard`; computed from the colours, never assumed from a palette's name.
+pub fn shortfalls(t: &Tokens, standard: Standard) -> Vec<Shortfall> {
+    let mut out = Vec::new();
+    // `house`: what the built-ins meet. `aa`: the WCAG AA minimum for that kind of pair.
+    let mut need = |pair: String, fg: Color32, bg: Color32, house: f32, aa: f32, required: bool| {
+        let needs = if standard == Standard::House { house } else { aa };
+        let ratio = contrast(fg, bg);
+        if ratio < needs {
+            out.push(Shortfall { pair, ratio, needs, required });
+        }
+    };
+    let surfaces = [("panel", t.panel), ("panel_alt", t.panel_alt), ("chrome", t.chrome), ("header", t.header), ("field", t.field)];
+    for (s, bg) in surfaces {
+        need(format!("text on {s}"), t.text, bg, 7.0, 4.5, true);
+        need(format!("text_dim on {s}"), t.text_dim, bg, 4.5, 4.5, true);
+        need(format!("text_faint on {s}"), t.text_faint, bg, 4.5, 4.5, true);
+        need(format!("accent_text on {s}"), t.accent_text, bg, 4.5, 4.5, true);
+        need(format!("error on {s}"), t.error, bg, 4.5, 4.5, true);
+        need(format!("ok on {s}"), t.ok, bg, 4.5, 4.5, true);
+    }
+    need("text on hover".into(), t.text, t.hover, 4.5, 4.5, true);
+    // A selected row.
+    need("text on accent_dim".into(), t.text, t.accent_dim, 4.5, 4.5, true);
+    // Text, and the marks drawn across the timeline grid while dragging frames (the drop outline,
+    // a span's new end), on the active row.
+    need("text on row_active".into(), t.text, t.row_active, 4.5, 4.5, true);
+    // Icons at rest and under the pointer, and on the active tool's block.
+    need("icon on panel".into(), t.icon, t.panel, 4.5, 3.0, true);
+    need("icon_hot on header".into(), t.icon_hot, t.header, 4.5, 3.0, true);
+    need("icon_hot on hover".into(), t.icon_hot, t.hover, 4.5, 3.0, true);
+    need("on_active on active".into(), t.on_active, t.active, 7.0, 3.0, true);
+    if t.icon_accent.a() > 0 {
+        // Two-tone icons (ADR 0117): the outline still reads on the tint inside it.
+        need("icon on icon_accent (over panel)".into(), t.icon, laid_over(t.icon_accent, t.panel), 3.0, 3.0, true);
+        need("icon_hot on icon_accent (over hover)".into(), t.icon_hot, laid_over(t.icon_accent, t.hover), 3.0, 3.0, true);
+        need("on_active on icon_accent (over active)".into(), t.on_active, laid_over(t.icon_accent, t.active), 3.0, 3.0, true);
+    }
+    // Text on filled buttons (Save, Restore, destructive actions).
+    need("on_fill on accent".into(), t.on_fill, t.accent, 4.5, 4.5, true);
+    need("on_fill on danger".into(), t.on_fill, t.danger, 4.5, 4.5, true);
+    // Marks on timeline blocks and the playhead's number; the blocks against the grid.
+    for (b, bg) in [("span", t.span), ("tween", t.tween), ("tween_shape", t.tween_shape), ("tween_motion", t.tween_motion), ("playhead", t.playhead)] {
+        need(format!("ink on {b}"), t.ink, bg, 4.5, 4.5, true);
+        need(format!("{b} on panel"), bg, t.panel, 3.0, 3.0, false);
+    }
+    // Shape hint letters (ink) on every marker colour.
+    for (h, bg) in [("hint_unplaced", t.hint_unplaced), ("hint_start", t.hint_start), ("hint_end", t.hint_end)] {
+        need(format!("ink on {h}"), t.ink, bg, 4.5, 4.5, true);
+    }
+    need("text on span_empty".into(), t.text, t.span_empty, 4.5, 4.5, true);
+    // Sound layers: waveforms on empty spans and on the active row.
+    need("waveform on span_empty".into(), t.waveform, t.span_empty, 4.5, 3.0, false);
+    need("waveform on row_active".into(), t.waveform, t.row_active, 4.5, 3.0, false);
+    // Focus rings, selection, the active tool and checkbox edges (WCAG 1.4.11). An accent bar's
+    // far end is as much a mark as its near one.
+    for (s, bg) in [("panel", t.panel), ("panel_alt", t.panel_alt), ("chrome", t.chrome)] {
+        need(format!("accent on {s}"), t.accent, bg, 3.0, 3.0, true);
+        need(format!("accent_end on {s}"), t.accent_end, bg, 3.0, 3.0, false);
+        need(format!("control_edge on {s}"), t.control_edge, bg, 3.0, 3.0, false);
+    }
+    need("active on panel".into(), t.active, t.panel, if t.control_outline { 3.0 } else { 1.0 }, 1.0, false);
+    // Stage selection is drawn over artwork, usually on a white stage.
+    need("selection on a white stage".into(), t.selection, Color32::WHITE, 3.0, 3.0, false);
+    if !t.dark {
+        // Light: the white stage stands off the pasteboard by its edge line, and the pasteboard
+        // is a step darker than the panels so the work area reads as one region.
+        need("text on pasteboard".into(), t.text, t.pasteboard, 7.0, 4.5, true);
+        need("pasteboard on a white stage".into(), t.pasteboard, Color32::WHITE, 1.4, 1.0, false);
+        need("selection on panel".into(), t.selection, t.panel, 3.0, 3.0, false);
+    }
+    if t.control_outline {
+        // High contrast: every region border and control outline is a visible line.
+        need("border on panel".into(), t.border, t.panel, 3.0, 3.0, false);
+        need("control_edge on field".into(), t.control_edge, t.field, 3.0, 3.0, false);
+        need("control_edge on header".into(), t.control_edge, t.header, 3.0, 3.0, false);
+    }
+    out
+}
+
+/// Whether the colours read light on dark: text lighter than the panels it sits on.
+pub fn reads_as_dark(t: &Tokens) -> bool {
+    contrast(t.text, Color32::BLACK) > contrast(t.panel, Color32::BLACK)
+}
+
+/// An accent bar (ADR 0117): the thin square bar that marks structure in the accent colour (a
+/// section band's edge, the active tab's line, a picked row's edge). Flat in `accent` unless the
+/// palette gives the bar another end (`accent_end`): then it runs from one to the other along its
+/// length. The one place a gradient is drawn, so no widget invents its own.
+pub fn accent_bar(p: &egui::Painter, rect: egui::Rect) {
+    let (from, to) = (T.accent, T.accent_end);
+    if from == to {
+        p.rect_filled(rect, SQUARE, from);
+        return;
+    }
+    let mut mesh = egui::Mesh::default();
+    let along_y = rect.height() >= rect.width();
+    for (corner, far) in [(rect.left_top(), false), (rect.right_top(), !along_y), (rect.right_bottom(), true), (rect.left_bottom(), along_y)] {
+        mesh.colored_vertex(corner, if far { to } else { from });
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    p.add(egui::Shape::mesh(mesh));
+}
+
 /// Smallest click target (WCAG 2.5.8 asks for 24 × 24; we use 28).
 pub const TARGET: f32 = 28.0;
+/// The rulers' thickness along the stage's top and left edges (ADR 0076).
+pub const RULER: f32 = 18.0;
 /// Tool buttons in the tools bar, and the glyph inside them.
 pub const TOOL_BUTTON: f32 = 36.0;
 pub const TOOL_ICON: f32 = 18.0;
@@ -296,15 +761,21 @@ pub fn apply(ctx: &egui::Context) {
 
 /// Switches the palette and restyles every widget with it (Preferences › Theme), live.
 pub fn apply_palette(ctx: &egui::Context, palette: Palette) {
-    ACTIVE.store(
-        match palette {
-            Palette::Graphite => 0,
-            Palette::HighContrast => 1,
-        },
-        Ordering::Relaxed,
-    );
-    let t = *palette.tokens();
-    let mut v = Visuals::dark();
+    set_active(palette.index());
+    restyle(ctx, *palette.tokens());
+}
+
+/// Switches to a theme of the user's (ADR 0117): `tokens` as its file gave them, over `base`
+/// (which the egui look and the title bar go by). The caller has checked them (`theme_file`);
+/// nothing here is applied in part.
+pub fn apply_user_theme(ctx: &egui::Context, base: Palette, tokens: Tokens) {
+    user_look::set(tokens);
+    set_active(base.index() | USER_LOOK);
+    restyle(ctx, tokens);
+}
+
+fn restyle(ctx: &egui::Context, t: Tokens) {
+    let mut v = if t.dark { Visuals::dark() } else { Visuals::light() };
     v.panel_fill = t.panel;
     v.window_fill = t.panel_alt;
     v.extreme_bg_color = t.field;
@@ -315,8 +786,8 @@ pub fn apply_palette(ctx: &egui::Context, palette: Palette) {
     v.selection.stroke = Stroke::new(2.0, t.accent);
     v.hyperlink_color = t.accent_text;
     v.window_stroke = Stroke::new(1.0, t.border);
-    v.window_shadow = depth(10, 28, 150);
-    v.popup_shadow = depth(4, 12, 130);
+    v.window_shadow = depth(10, 28, t.window_shadow);
+    v.popup_shadow = depth(4, 12, t.popup_shadow);
     v.window_corner_radius = CornerRadius::same(t.radius_window);
     v.menu_corner_radius = CornerRadius::same(t.radius_menu);
     for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
@@ -328,10 +799,17 @@ pub fn apply_palette(ctx: &egui::Context, palette: Palette) {
     // Separators and group frames: the layout lines.
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, t.border);
     v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, t.text_dim);
-    // Buttons are flat fills at rest; no border on every button.
+    // Buttons are flat fills at rest; no border on every button (a hairline in the light look).
+    let rest = if t.control_outline {
+        Stroke::new(1.0, t.control_edge)
+    } else if t.control_hairline {
+        Stroke::new(1.0, t.border)
+    } else {
+        Stroke::NONE
+    };
     v.widgets.inactive.weak_bg_fill = t.header;
     v.widgets.inactive.bg_fill = t.header;
-    v.widgets.inactive.bg_stroke = if t.control_outline { Stroke::new(1.0, t.control_edge) } else { Stroke::NONE };
+    v.widgets.inactive.bg_stroke = rest;
     v.widgets.inactive.fg_stroke = Stroke::new(1.5, t.text);
     v.widgets.hovered.weak_bg_fill = t.hover;
     v.widgets.hovered.bg_fill = t.hover;
@@ -344,8 +822,11 @@ pub fn apply_palette(ctx: &egui::Context, palette: Palette) {
     v.widgets.active.fg_stroke = Stroke::new(1.5, t.text);
     v.widgets.open.weak_bg_fill = t.hover;
     v.widgets.open.bg_fill = t.hover;
-    v.widgets.open.bg_stroke = if t.control_outline { Stroke::new(1.0, t.control_edge) } else { Stroke::NONE };
-    // Same dark look whatever the OS theme is.
+    v.widgets.open.bg_stroke = rest;
+    // egui keeps a dark and a light style and picks one by the OS theme; both are ours, so the
+    // palette chosen here is the one drawn (Follow system is decided in `Prefs::palette`). Naming
+    // its theme keeps the window's title bar (Windows, macOS) dark or light with it.
+    ctx.set_theme(if t.dark { egui::Theme::Dark } else { egui::Theme::Light });
     ctx.all_styles_mut(|s| {
         s.visuals = v.clone();
         s.spacing.item_spacing = egui::vec2(8.0, 6.0);
@@ -374,9 +855,46 @@ pub fn stage_text_font(size: f32) -> egui::FontId {
     egui::FontId::proportional(size.clamp(12.0, 64.0))
 }
 
+/// The editor's face for a run of stage text at `size` screen pixels (within what the editor
+/// can show legibly).
+pub fn stage_text_run_font(size: f32) -> egui::FontId {
+    egui::FontId::proportional(if size.is_finite() { size.clamp(6.0, 96.0) } else { 14.0 })
+}
+
+/// A run's own colour (document data) as the editor shows it, at least faintly visible.
+pub fn stage_text_colour(c: anicraft_engine::doc::Rgba) -> Color32 {
+    let b = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Color32::from_rgba_unmultiplied(b(c.r), b(c.g), b(c.b), b(c.a.max(0.25)))
+}
+
 /// The typefaces embedded at build time (Inter, JetBrains Mono), for text on the stage.
 pub fn embedded_fonts() -> Vec<std::sync::Arc<[u8]>> {
     [craft_fonts::UI_FONT, craft_fonts::MONO_FONT].into_iter().flatten().map(std::sync::Arc::from).collect()
+}
+
+/// Noto Sans Georgian (craft-fonts `Geor`) when this build embedded a face that parses and covers
+/// the Georgian letters. The
+/// interface offers Georgian only then (`i18n::ready_codes`), and `install_fonts` loads the same
+/// face: epaint panics on bytes it cannot parse, so a damaged file must never reach it.
+pub fn georgian_font() -> Option<&'static [u8]> {
+    static FACE: std::sync::OnceLock<Option<&'static [u8]>> = std::sync::OnceLock::new();
+    *FACE.get_or_init(|| craft_fonts::GEORGIAN_FONT.filter(|b| parses_as_font(b)))
+}
+
+/// Whether `bytes` is a font file that draws every Georgian letter (U+10D0..U+10FA).
+fn parses_as_font(bytes: &[u8]) -> bool {
+    let letters: String = ('\u{10D0}'..='\u{10FA}').collect();
+    let fonts = anicraft_engine::text::Fonts::from_faces([bytes.to_vec()]);
+    fonts.layout(&letters, &anicraft_engine::text::Style::default()).is_ok_and(|laid| laid.missing == 0)
+}
+
+#[cfg(test)]
+mod georgian_face_tests {
+    #[test]
+    fn garbage_bytes_are_not_a_font() {
+        assert!(!super::parses_as_font(b"not a font file at all"));
+        assert!(!super::parses_as_font(&[]));
+    }
 }
 
 /// Which typefaces are active (for About and diagnostics), in the interface language.
@@ -394,7 +912,8 @@ pub type UserFont = (String, Vec<u8>, u32);
 
 /// Installs the UI typefaces (ADR 0005). Order in each family: the user's system font (from
 /// Preferences), then the craft-fonts pair (when embedded at build time), then egui's bundled
-/// fonts, which stay as fallbacks for glyph coverage.
+/// fonts, which stay as fallbacks for glyph coverage, then Noto Sans Georgian (when embedded)
+/// for the letters none of them has.
 pub fn install_fonts(ctx: &egui::Context, ui_font: Option<&UserFont>, data_font: Option<&UserFont>) {
     use egui::{FontData, FontDefinitions, FontFamily};
     use std::sync::Arc;
@@ -403,6 +922,12 @@ pub fn install_fonts(ctx: &egui::Context, ui_font: Option<&UserFont>, data_font:
         if let Some(b) = bytes {
             defs.font_data.insert(name.to_owned(), Arc::new(FontData::from_static(b)));
             defs.families.entry(family).or_default().insert(0, name.to_owned());
+        }
+    }
+    if let Some(b) = georgian_font() {
+        defs.font_data.insert("craft-noto-sans-georgian".to_owned(), Arc::new(FontData::from_static(b)));
+        for family in [FontFamily::Proportional, FontFamily::Monospace] {
+            defs.families.entry(family).or_default().push("craft-noto-sans-georgian".to_owned());
         }
     }
     for (user, family) in [(ui_font, FontFamily::Proportional), (data_font, FontFamily::Monospace)] {
@@ -527,21 +1052,55 @@ pub fn radio_value<V: PartialEq>(ui: &mut egui::Ui, current: &mut V, value: V, l
     with_control_edges(ui, |ui| ui.radio_value(current, value, label))
 }
 
+/// The narrowest a field or list shrinks to in a narrow panel (ADR 0087).
+pub const MIN_FIELD: f32 = 56.0;
+
+/// A field's or list's width: `w`, or the room left in the row when that is less (never under
+/// `MIN_FIELD`), so a narrow panel shrinks it rather than cutting it off.
+pub fn fit(ui: &egui::Ui, w: f32) -> f32 {
+    // In a wrapping row `available_width` is a whole row; the room left on this one is less.
+    w.min(ui.available_size_before_wrap().x).max(MIN_FIELD)
+}
+
 /// Label column widths for forms: dialogs (Preferences) and the narrow dock.
 pub const FORM_LABEL_DIALOG: f32 = 150.0;
 pub const FORM_LABEL_DOCK: f32 = 78.0;
 
 /// A form row on a two-column grid: the label left-aligned in a fixed column, the controls after
 /// it. Every row's controls start at the same x, so a form reads as one column of values.
+///
+/// In a narrow panel (ADR 0087) a row whose controls don't fit beside the label puts them under
+/// it instead, wrapping if they still don't fit, so nothing is drawn past the panel's edge. The
+/// controls' width beside the label is remembered per row, so the choice holds steady while the
+/// panel is resized; a change of choice redraws the frame at once.
 pub fn form_row<R>(ui: &mut egui::Ui, label_w: f32, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    ui.horizontal(|ui| {
-        ui.allocate_ui_with_layout(egui::vec2(label_w, TARGET), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            ui.set_min_size(egui::vec2(label_w, TARGET));
-            ui.label(text(Type::Label, label));
-        });
-        add(ui)
-    })
-    .inner
+    let id = ui.id().with(("form_row", label));
+    let avail = ui.available_width();
+    let gap = ui.spacing().item_spacing.x;
+    let need: Option<f32> = ui.data(|d| d.get_temp(id));
+    if need.is_some_and(|n| label_w + gap + n > avail + 0.5) {
+        ui.add(egui::Label::new(text(Type::Label, label)).wrap());
+        return ui.horizontal_wrapped(add).inner;
+    }
+    let (r, used) = ui
+        .horizontal(|ui| {
+            ui.allocate_ui_with_layout(egui::vec2(label_w, TARGET), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_size(egui::vec2(label_w, TARGET));
+                ui.set_max_width(label_w);
+                ui.add(egui::Label::new(text(Type::Label, label)).wrap());
+            });
+            let start = ui.cursor().left();
+            let r = add(ui);
+            (r, ui.min_rect().right() - start)
+        })
+        .inner;
+    if need.is_none_or(|n| (n - used).abs() > 0.5) {
+        ui.data_mut(|d| d.insert_temp(id, used));
+        if label_w + gap + used > avail + 0.5 {
+            ui.ctx().request_discard("a form row no longer fits beside its label"); // i18n-exempt: a debug reason, never shown
+        }
+    }
+    r
 }
 
 /// A note that belongs to the controls above it (an explanation, a preview): aligned with the
@@ -591,7 +1150,7 @@ pub fn section_with_header<R>(ui: &mut egui::Ui, id: &str, style: Section, title
             p.rect_filled(rect, SQUARE, if hot { T.header } else { T.panel_alt });
             p.line_segment([rect.left_top(), rect.right_top()], Stroke::new(1.0, T.border));
             p.line_segment([rect.left_bottom(), rect.right_bottom()], Stroke::new(1.0, T.border));
-            p.rect_filled(egui::Rect::from_min_size(rect.left_top() + vec2(0.0, 1.0), vec2(3.0, rect.height() - 1.0)), SQUARE, T.accent);
+            accent_bar(p, egui::Rect::from_min_size(rect.left_top() + vec2(0.0, 1.0), vec2(3.0, rect.height() - 1.0)));
         }
         Section::Rule => {
             if hot {
@@ -608,7 +1167,11 @@ pub fn section_with_header<R>(ui: &mut egui::Ui, id: &str, style: Section, title
     let icon = if open { crate::icons::Icon::ChevronDown } else { crate::icons::Icon::ChevronRight };
     crate::icons::paint(p, chevron, icon, if hot { T.text } else { T.text_dim });
     let mut x = rect.left() + left + 20.0;
-    let title_g = p.layout_no_wrap(title.to_string(), font(Type::Heading), color(Type::Heading));
+    // A title longer than the row (a narrow dock, a long translation) ends in "…" at its edge;
+    // the full title is the header's accessible name.
+    let mut job = egui::text::LayoutJob::simple_singleline(title.to_string(), font(Type::Heading), color(Type::Heading));
+    job.wrap = egui::text::TextWrapping::truncate_at_width((rect.right() - x - 4.0).max(0.0));
+    let title_g = p.layout_job(job);
     let w = title_g.rect.width();
     p.galley(pos2(x, rect.center().y - title_g.rect.height() * 0.5), title_g, color(Type::Heading));
     x += w;
@@ -651,9 +1214,48 @@ pub fn to_rgba(c: Color32) -> anicraft_engine::doc::Rgba {
     anicraft_engine::doc::Rgba::new(f32::from(r) / 255.0, f32::from(g) / 255.0, f32::from(b) / 255.0, f32::from(a) / 255.0)
 }
 
+/// The heat map of a bone's weights (ADR 0090), the same in every palette because it is drawn
+/// over artwork: blue (none) through cyan, green and yellow to red (all of the point).
+pub const HEAT: [Color32; 5] = [Color32::from_rgb(0x2b, 0x4c, 0xd9), Color32::from_rgb(0x1f, 0xb5, 0xd6), Color32::from_rgb(0x2f, 0xc2, 0x5a), Color32::from_rgb(0xf2, 0xd0, 0x2a), Color32::from_rgb(0xe8, 0x3a, 0x2a)];
+
+/// The colour of weight `w` (0…1) on [`HEAT`], blended between its stops.
+pub fn heat(w: f32) -> Color32 {
+    let w = if w.is_finite() { w.clamp(0.0, 1.0) } else { 0.0 };
+    let x = w * (HEAT.len() - 1) as f32;
+    let i = (x as usize).min(HEAT.len() - 2);
+    let t = x - i as f32;
+    let (a, b) = (HEAT.get(i).copied().unwrap_or(Color32::BLACK), HEAT.get(i + 1).copied().unwrap_or(Color32::BLACK));
+    let mix = |p: u8, q: u8| (f32::from(p) + (f32::from(q) - f32::from(p)) * t).round().clamp(0.0, 255.0) as u8;
+    Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
+}
+
+/// Gives a text field the keyboard with all of `text` selected, so typing replaces what a
+/// dialog offers (a name to change, a default name) and the arrow keys still edit it
+/// (#196, #322).
+pub fn focus_selected(ui: &egui::Ui, field: &egui::Response, text: &str) {
+    field.request_focus();
+    if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), field.id) {
+        let all = egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(text.chars().count()));
+        state.cursor.set_char_range(Some(all));
+        state.store(ui.ctx(), field.id);
+    }
+}
+
+/// Construct an RGB colour derived from artwork rather than a UI theme token.
+/// UI control colours must still come from T.
+pub(crate) fn artwork_rgb(r: u8, g: u8, b: u8) -> Color32 {
+    Color32::from_rgb(r, g, b)
+}
+
 pub fn to_color32(c: anicraft_engine::doc::Rgba) -> Color32 {
     let c = c.sanitized();
     Color32::from_rgba_unmultiplied((c.r * 255.0).round() as u8, (c.g * 255.0).round() as u8, (c.b * 255.0).round() as u8, (c.a * 255.0).round() as u8)
+}
+
+/// Where a dragged panel tab would dock (ADR 0075): the accent, light enough to see the
+/// panels under it.
+pub fn dock_drop() -> Color32 {
+    T.accent.gamma_multiply(0.28)
 }
 
 /// How strongly a button's hit area is laid over the artwork (ADR 0057): enough to see where the
@@ -664,307 +1266,3 @@ pub const HIT_AREA_ALPHA: f32 = 0.35;
 pub fn hit_area() -> (anicraft_engine::doc::Rgba, f32) {
     (to_rgba(T.hit_area), HIT_AREA_ALPHA)
 }
-
-fn color_button(ui: &mut egui::Ui, color: Color32, open: bool) -> egui::Response {
-    let size = ui.spacing().interact_size;
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ColorButton, ui.is_enabled(), ""));
-
-    if ui.is_rect_visible(rect) {
-        let visuals = if open {
-            &ui.visuals().widgets.open
-        } else {
-            ui.style().interact(&response)
-        };
-        let rect = rect.expand(visuals.expansion);
-
-        egui::color_picker::show_color_at(ui.painter(), color, rect);
-
-        let corner_radius = visuals.corner_radius;
-        ui.painter().rect_stroke(rect, corner_radius, visuals.bg_stroke, egui::StrokeKind::Inside);
-    }
-
-    response
-}
-
-/// Parses `#rgb`, `#rgba`, `#rrggbb`, or `#rrggbbaa` (leading `#` optional).
-fn parse_hex_color(s: &str, has_alpha: bool) -> Option<[u8; 4]> {
-    let s = s.trim().trim_start_matches('#');
-    // Hex digits only: `from_str_radix` would also take a leading `+` ("#+f0000").
-    if !s.chars().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    match s.len() {
-        3 => {
-            let r = u8::from_str_radix(&s[0..1], 16).ok()? * 17;
-            let g = u8::from_str_radix(&s[1..2], 16).ok()? * 17;
-            let b = u8::from_str_radix(&s[2..3], 16).ok()? * 17;
-            Some([r, g, b, 255])
-        }
-        4 if has_alpha => {
-            let r = u8::from_str_radix(&s[0..1], 16).ok()? * 17;
-            let g = u8::from_str_radix(&s[1..2], 16).ok()? * 17;
-            let b = u8::from_str_radix(&s[2..3], 16).ok()? * 17;
-            let a = u8::from_str_radix(&s[3..4], 16).ok()? * 17;
-            Some([r, g, b, a])
-        }
-        4 => {
-            let r = u8::from_str_radix(&s[0..1], 16).ok()? * 17;
-            let g = u8::from_str_radix(&s[1..2], 16).ok()? * 17;
-            let b = u8::from_str_radix(&s[2..3], 16).ok()? * 17;
-            Some([r, g, b, 255])
-        }
-        6 => {
-            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
-            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
-            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
-            Some([r, g, b, 255])
-        }
-        8 if has_alpha => {
-            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
-            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
-            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
-            let a = u8::from_str_radix(&s[6..8], 16).ok()?;
-            Some([r, g, b, a])
-        }
-        8 => {
-            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
-            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
-            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
-            Some([r, g, b, 255])
-        }
-        _ => None,
-    }
-}
-
-fn color_edit_button_srgba_inner(
-    ui: &mut egui::Ui,
-    color: &mut Color32,
-    alpha: egui::color_picker::Alpha,
-) -> egui::Response {
-    let mut button_response = color_button(ui, *color, false);
-    let popup_id = button_response.id.with("color_picker_popup");
-    let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
-    if open {
-        let visuals = &ui.visuals().widgets.open;
-        let rect = button_response.rect.expand(visuals.expansion);
-        ui.painter().rect_stroke(rect, visuals.corner_radius, visuals.bg_stroke, egui::StrokeKind::Inside);
-    }
-
-    const COLOR_SLIDER_WIDTH: f32 = 275.0;
-
-    egui::Popup::menu(&button_response)
-        .id(popup_id)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .show(|ui| {
-            ui.spacing_mut().slider_width = COLOR_SLIDER_WIDTH;
-
-            let mut hsva = ui
-                .data(|d| d.get_temp::<(Color32, egui::ecolor::Hsva)>(popup_id))
-                .filter(|(c, _)| *c == *color)
-                .map(|(_, h)| h)
-                .unwrap_or_else(|| egui::ecolor::Hsva::from(*color));
-
-            let mut changed = egui::color_picker::color_picker_hsva_2d(ui, &mut hsva, alpha);
-
-            let new_color = if alpha == egui::color_picker::Alpha::Opaque {
-                Color32::from(egui::ecolor::Hsva { a: 1.0, ..hsva })
-            } else {
-                Color32::from(hsva)
-            };
-
-            let current_hex = if alpha == egui::color_picker::Alpha::Opaque || new_color.a() == 255 {
-                format!("#{:02x}{:02x}{:02x}", new_color.r(), new_color.g(), new_color.b())
-            } else {
-                format!("#{:02x}{:02x}{:02x}{:02x}", new_color.r(), new_color.g(), new_color.b(), new_color.a())
-            };
-
-            let hex_id = popup_id.with("hex");
-            let mut hex_text = ui.data(|d| d.get_temp::<String>(hex_id)).unwrap_or_else(|| current_hex.clone());
-            if changed {
-                hex_text = current_hex.clone();
-                ui.data_mut(|d| d.remove_temp::<String>(hex_id));
-            }
-
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(text(Type::Caption, tr!("Hex")));
-                let r = with_type(ui, Type::Data, |ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut hex_text)
-                            .id(hex_id)
-                            .desired_width(76.0)
-                            .char_limit(9),
-                    )
-                })
-                .named(tr!("Hex colour"));
-
-                if r.changed() {
-                    ui.data_mut(|d| d.insert_temp(hex_id, hex_text.clone()));
-                }
-
-                let enter = r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                if r.lost_focus() || enter {
-                    if let Some([cr, cg, cb, ca]) = parse_hex_color(&hex_text, alpha != egui::color_picker::Alpha::Opaque) {
-                        let parsed = if alpha == egui::color_picker::Alpha::Opaque {
-                            Color32::from_rgb(cr, cg, cb)
-                        } else {
-                            Color32::from_rgba_unmultiplied(cr, cg, cb, ca)
-                        };
-                        if parsed != new_color {
-                            hsva = egui::ecolor::Hsva::from(parsed);
-                            changed = true;
-                        }
-                    }
-                    ui.data_mut(|d| d.remove_temp::<String>(hex_id));
-                    if enter {
-                        ui.memory_mut(|m| m.surrender_focus(hex_id));
-                    }
-                }
-            });
-
-            let final_color = if alpha == egui::color_picker::Alpha::Opaque {
-                Color32::from(egui::ecolor::Hsva { a: 1.0, ..hsva })
-            } else {
-                Color32::from(hsva)
-            };
-
-            ui.data_mut(|d| d.insert_temp(popup_id, (final_color, hsva)));
-
-            if changed || final_color != *color {
-                *color = final_color;
-                button_response.mark_changed();
-            }
-        });
-
-    button_response
-}
-
-/// Shows a button with the given sRGB color.
-/// If the user clicks the button, a full color picker with a Hex field is shown.
-pub fn color_edit_button_srgb(ui: &mut egui::Ui, srgb: &mut [u8; 3]) -> egui::Response {
-    let mut srgba = Color32::from_rgb(srgb[0], srgb[1], srgb[2]);
-    let response = color_edit_button_srgba_inner(ui, &mut srgba, egui::color_picker::Alpha::Opaque);
-    srgb[0] = srgba.r();
-    srgb[1] = srgba.g();
-    srgb[2] = srgba.b();
-    response
-}
-
-/// Shows a button with the given Color32 color.
-/// If the user clicks the button, a full color picker with a Hex field is shown.
-pub fn color_edit_button_srgba(ui: &mut egui::Ui, srgba: &mut Color32) -> egui::Response {
-    color_edit_button_srgba_inner(ui, srgba, egui::color_picker::Alpha::OnlyBlend)
-}
-
-/// Shows a button with the given unmultiplied sRGBA color.
-/// If the user clicks the button, a full color picker with a Hex field is shown.
-pub fn color_edit_button_srgba_unmultiplied(ui: &mut egui::Ui, srgba: &mut [u8; 4]) -> egui::Response {
-    let mut c = Color32::from_rgba_unmultiplied(srgba[0], srgba[1], srgba[2], srgba[3]);
-    let response = color_edit_button_srgba_inner(ui, &mut c, egui::color_picker::Alpha::OnlyBlend);
-    let [r, g, b, a] = c.to_srgba_unmultiplied();
-    *srgba = [r, g, b, a];
-    response
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn hex_field_accepts_only_hex_digits() {
-        assert_eq!(parse_hex_color("#4fa3ff", false), Some([0x4f, 0xa3, 0xff, 255]));
-        assert_eq!(parse_hex_color("fff", false), Some([255, 255, 255, 255]));
-        assert_eq!(parse_hex_color("#11223344", true), Some([0x11, 0x22, 0x33, 0x44]));
-        for bad in ["#+f0000", "+ff", "#ff 000", "#gg0000", "#12345", "", "#", "#ff00€"] {
-            assert_eq!(parse_hex_color(bad, true), None, "{bad:?} is not a colour");
-        }
-    }
-
-    #[test]
-    fn color_selector_palette_shows_and_edits_hex() {
-        let ctx = egui::Context::default();
-        ctx.enable_accesskit();
-        let mut color = [0x4f, 0xa3, 0xff];
-
-        // Frame 1: render button and allocate size
-        let mut button_rect = egui::Rect::NOTHING;
-        let mut button_id = egui::Id::NULL;
-        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            let resp = color_edit_button_srgb(ui, &mut color);
-            button_rect = resp.rect;
-            button_id = resp.id;
-        });
-        out.textures_delta.clear();
-
-        // Frame 2: simulate click on the button to open popup
-        let mut raw_input = egui::RawInput::default();
-        raw_input.events.push(egui::Event::PointerButton {
-            pos: button_rect.center(),
-            button: egui::PointerButton::Primary,
-            pressed: true,
-            modifiers: egui::Modifiers::default(),
-        });
-        raw_input.events.push(egui::Event::PointerButton {
-            pos: button_rect.center(),
-            button: egui::PointerButton::Primary,
-            pressed: false,
-            modifiers: egui::Modifiers::default(),
-        });
-        let mut out = ctx.run_ui(raw_input, |ui| {
-            color_edit_button_srgb(ui, &mut color);
-        });
-        out.textures_delta.clear();
-
-        // Frame 3: popup is now open; verify Hex field is present and displays current hex
-        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            color_edit_button_srgb(ui, &mut color);
-        });
-        out.textures_delta.clear();
-
-        let update = out.platform_output.accesskit_update.expect("AccessKit update");
-        let hex_field = update.nodes.iter().find(|(_, n)| {
-            n.label() == Some("Hex colour") || n.value() == Some("#4fa3ff")
-        });
-        assert!(hex_field.is_some(), "the colour selector palette is missing a field for hexadecimal colour values");
-        let node = &hex_field.unwrap().1;
-        assert_eq!(node.value(), Some("#4fa3ff"));
-
-        // Frame 4: edit hex field to a new color and press Enter
-        let popup_id = button_id.with("color_picker_popup");
-        let hex_id = popup_id.with("hex");
-        ctx.data_mut(|d| d.insert_temp(hex_id, "#ff6b4a".to_string()));
-        ctx.memory_mut(|m| m.request_focus(hex_id));
-        let mut enter_input = egui::RawInput::default();
-        enter_input.events.push(egui::Event::Key {
-            key: egui::Key::Enter,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        });
-        let mut out = ctx.run_ui(enter_input, |ui| {
-            let resp = color_edit_button_srgb(ui, &mut color);
-            assert!(resp.changed());
-        });
-        out.textures_delta.clear();
-
-        assert_eq!(color, [0xff, 0x6b, 0x4a]);
-    }
-
-    #[test]
-    fn test_parse_hex_color() {
-        assert_eq!(parse_hex_color("#fff", false), Some([255, 255, 255, 255]));
-        assert_eq!(parse_hex_color("000", false), Some([0, 0, 0, 255]));
-        assert_eq!(parse_hex_color("#ff6b4a", false), Some([0xff, 0x6b, 0x4a, 255]));
-        assert_eq!(parse_hex_color("ff6b4a", false), Some([0xff, 0x6b, 0x4a, 255]));
-        assert_eq!(parse_hex_color("#ff6b4a80", true), Some([0xff, 0x6b, 0x4a, 0x80]));
-        assert_eq!(parse_hex_color("#ff6b4a80", false), Some([0xff, 0x6b, 0x4a, 255]));
-        assert_eq!(parse_hex_color("#f6a8", true), Some([0xff, 0x66, 0xaa, 0x88]));
-        assert_eq!(parse_hex_color("#f6a8", false), Some([0xff, 0x66, 0xaa, 255]));
-        assert_eq!(parse_hex_color("invalid", false), None);
-        assert_eq!(parse_hex_color("🎨", false), None);
-        assert_eq!(parse_hex_color("", false), None);
-    }
-}
-

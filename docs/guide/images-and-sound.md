@@ -72,13 +72,17 @@ SVG files from illustration tools come in as artwork you can keep editing, not a
   limits and dashes.
 * Groups, reused parts (`use` and symbols), transforms and the drawing's view box.
 * Inline and attribute styles, and opacity.
-* Linear and radial gradients.
+* Linear and radial gradients, with their spread (reflect, repeat), linear-RGB blending, focal
+  point and transform.
 * **Clip paths and masks.** A drawing with clipping comes in as a layer folder named after the
   file. Each clipped group sits on a masked layer under a mask layer that holds the clip's shape,
   so you can move or reshape the mask afterwards. Clips that cut nothing, like the frame clip
-  many design tools add, are dropped. Masks come across when they are solid shapes.
+  many design tools add, are dropped. Solid masks become ordinary (Shape) masks; faded, grey or
+  gradient masks become **soft masks** (mask type Luminance, or Alpha when the SVG says so).
 * **Text** comes in as text you can edit, one block per positioned line, with its font, size,
-  weight, italic, colour, letter spacing and alignment. Fonts that aren't on your computer fall
+  weight, italic, colour, letter spacing and alignment. Text on a path comes in as text on a
+  path. Characters the SVG places one by one (moved, shifted or turned) come in as small blocks
+  of their own where they are. Fonts that aren't on your computer fall
   back to the default, and the status bar names them.
 
 ### What doesn't come across yet
@@ -86,9 +90,7 @@ SVG files from illustration tools come in as artwork you can keep editing, not a
 AniCraft lists these in the status bar after the import, instead of guessing:
 
 * images embedded in the SVG, filters, style sheets (inline styles are read) and pattern fills;
-* soft, faded or coloured masks (drawn unmasked);
-* per-character positions and text on a path;
-* gradient strokes (drawn in one colour), and repeated or reflected gradients (drawn padded).
+* gradient strokes (drawn in one colour).
 
 ### An SVG as a symbol
 
@@ -185,6 +187,95 @@ speaker toggle in its timeline row. Volume applies to the layer's sounds and to 
 the symbols on it. A muted layer is silent while you work and in every export, which is handy
 while you time other tracks.
 
+## Convert Audio to Keyframes
+
+A sound can animate for you. **Convert Audio to Keyframes** measures how loud the sound is on
+each frame and writes that onto a property of an object: a speaker that pulses with the beat, a
+logo that brightens on every hit, a jaw that drops when a character talks.
+
+![Convert Audio to Keyframes: the star's scale follows a beat, previewed on the timeline](images/audio-to-keyframes.png)
+
+1. Put the sound on a layer and the object on another layer. **Stream** sync is best: the
+   sound then stays on its frames. With Event or Start sync the dialog still works, and a line
+   under **Frames** reminds you that the keys can drift from what is heard after a jump on the
+   timeline.
+2. Choose **Modify › Timeline › Convert Audio to Keyframes…**, or select the sound's keyframe
+   and press **To Keyframes…** in **Properties**.
+3. Pick the **Layer** that gets the keys (and the **Object**, when the layer holds several).
+4. Pick the **Property**, and its value **In silence** and **At the loudest**:
+
+   | Property | The values are |
+   |---|---|
+   | **Scale**, **Scale X**, **Scale Y** | percent of the object's own size (100 % is as it is) |
+   | **Alpha** | opacity in percent |
+   | **X offset**, **Y offset** | pixels from where the object is (negative Y is up) |
+   | **Rotation** | degrees from how the object is turned |
+   | **First frame** | a frame of a graphic symbol: louder shows a later frame, held as a single frame |
+
+5. Shape the movement:
+   * **Threshold** ignores everything quieter than this share of the loudest frame. Raise it
+     so background noise doesn't make the object tremble, or so only the loud beats count.
+   * **Smoothing** averages each frame with the frames either side. 0 follows every flick;
+     higher values are calmer. The beat stays on its frame.
+   * **Channel** (stereo sounds) measures the left side, the right side or both.
+   * **Key every** 2 frames animates on twos, and so on.
+6. Choose what to **Write**: **Keyframes** on the layer, as if you had set each by hand, or a
+   **Motion tween curve**, which keeps the span whole and shows in the Motion Editor (a motion
+   tween is made for an object alone on its layer).
+7. Press **OK**. It is one undo step.
+
+Everything is previewed while you change it. The graph shows the sound's loudness frame by
+frame, the threshold, the value the keys will follow (the white line) and a tick where each
+key lands; the stage and the timeline show the keys themselves. Click or drag in the graph to
+see another frame on the stage. Clear **Preview** to compare with the document as it was.
+
+Scale and rotation turn about the object's transformation point (the middle of a shape that
+has none). Keyframes that were already on the layer keep their place and take the value. After
+the sound ends, the layer carries on as it was. A layer shorter than the sound grows to its
+length.
+
+## Auto lip-sync
+
+**Auto Lip-Sync** listens to speech and picks a mouth for every frame, as Animate's Lip Syncing
+does. It is a first pass: expect to fix some mouths by hand afterwards.
+
+![A mouth lip-synced to speech: a keyframe on the Mouth layer wherever the mouth changes](images/lip-sync.png)
+
+1. Draw the mouths as the frames of a **graphic symbol**, one frame per mouth, and put an
+   instance on its own layer. **File › New from Template › Lip-sync mouth chart** gives you a
+   Mouth symbol with ten labelled frames to redraw.
+2. Put the dialogue on another layer, with **Stream** sync.
+3. Select the mouth and press **Lip Sync…** in **Properties** (beside Looping), or choose
+   **Modify › Timeline › Auto Lip-Sync…**.
+4. Check the **Mouths**. AniCraft tells five mouth shapes apart and needs a frame of your
+   symbol for each:
+
+   | Mouth | Sounds | Frame label it looks for |
+   |---|---|---|
+   | **Rest** | silence | Rest |
+   | **Open** | ah, as in *father* and *cat* | AI |
+   | **Wide** | ee and e, and the hiss of s and t | E |
+   | **Round** | oh, oo and w | O |
+   | **Closed** | m, b, p and the short stops between syllables | MBP |
+
+   Frames are found by their labels (other common names such as *open*, *wide*, *round* and
+   *closed* work too). Choose another frame for any mouth from its menu.
+5. **Silence below** sets how quiet counts as silence. **Hold each mouth** is the fewest frames
+   a mouth stays, so it doesn't flicker; closed lips are kept however short.
+6. Press **OK**. The Mouth layer gets a keyframe wherever the mouth changes, each showing one
+   frame of the symbol (**Single frame**). It is one undo step.
+
+The preview shows a row for each mouth with the frames it gets, under the sound's loudness.
+
+How it listens: no speech recognition and nothing sent anywhere. Each frame's sound is sorted
+by where its energy lies (low for *oo*, in the middle for *ah*, high for *ee* and *s*), which is
+what tells vowels apart. It cannot tell *f* from *s* or *l* from *d*, so the chart's other mouths
+(FV, L, WQ, U and the consonants) are yours to place. The same sound always gives the same
+keys.
+
+To fix a mouth afterwards, select its keyframe and change **First frame** in Properties, or
+move the keyframe on the timeline.
+
 ## Sounds inside symbols and buttons
 
 Sounds placed on a symbol's own timeline play too:
@@ -204,15 +295,29 @@ soundtrack: audio and video exports don't include them. See
 ## Hearing it: playback and scrubbing
 
 * Press **Enter** (**Control › Play**) to play the movie with its sound. The playhead follows the
-  sound, so picture and sound stay together.
+  sound being heard, so picture and sound stay together: if your computer can't draw every
+  frame in time, frames are skipped rather than the picture falling behind.
 * **Stream** sounds pick up wherever the playhead jumps.
-* **Drag the playhead** to scrub: you hear short snippets of the sound under it, which helps with
-  lip sync.
+* **Event** sounds play to their end: when Loop Playback goes round to frame 1, or the playhead
+  stops on the last frame, they carry on. Press **Enter** again to stop all sound.
+* **Drag the playhead** to scrub: you hear a short slice of the stream sounds under it, which
+  helps with lip sync. Turn it off with **Control › Audio Scrubbing**.
 * **Test Movie** (**Ctrl+Enter**) plays the sounds too, including those in movie clips, graphics
   and buttons.
 
-The web version of AniCraft plays silently for now. Sounds still import, show on the timeline
-and export.
+### Volume and mute while you work
+
+The speaker and slider in the timeline's header set how loud you hear the movie; click the
+speaker (or choose **Control › Mute Sounds**) to silence it. They are yours, not the document's:
+they're kept in your preferences (**Preferences › Sound**) and never change an export. To make a
+layer quieter in the movie itself, use its volume in Properties.
+
+If there is no sound device, or it is unplugged while playing, playback carries on silently and
+the status bar says so; plug one in and press **Enter** again. A new default device (headphones
+plugged in) is followed on its own where the system allows.
+
+The web version plays sound through the browser (Web Audio); the browser lets it start on your
+first play.
 
 ## Getting sound out
 
@@ -226,4 +331,8 @@ Lottie animations carry no sound. See [Exporting and Publish](exporting-and-publ
 
 * Picking a colour from a bitmap's pixels with the Eyedropper.
 * Panning beyond what the envelope does.
-* Sound playback in the web version.
+* Convert Audio to Keyframes on the camera or an armature layer, a filter's values, or with a
+  classic tween between the keys; the sound's own effect (a fade) isn't counted in its
+  loudness.
+* Lip-sync that tells more mouths apart (F and V, L, the chart's other consonants), or reads a
+  script; lip-syncing several sounds in one go.

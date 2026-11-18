@@ -2,7 +2,9 @@
 
 AniCraft also runs in a web browser: the same program, built for WebAssembly
 (`wasm32-unknown-unknown`), drawing into a page with WebGL2. How it is built, and why, is in
-[ADR 0036](adr/0036-web-build.md). Nothing is hosted yet; you build it and serve it yourself.
+[ADR 0036](adr/0036-web-build.md). Nothing is hosted yet and the releases don't carry it yet; you
+build it and serve it yourself. `packaging/web/package.sh` builds it and zips it as the release
+download `dist/release/anicraft-web-<version>.zip`, the static site to unzip onto a web server.
 
 ## Build
 
@@ -63,13 +65,15 @@ autosave) work. On another host, serve over HTTPS for the same reason. Compressi
   shows as missing (the browser never gives its path back): open it again with Open.
 * **Leaving the page** with unsaved changes asks first.
 * **Shortcuts** are the desktop ones; on a Mac they use ⌘.
+* **Sound playback** uses Web Audio (ADR 0095): playback, scrubbing, previews and Test Movie,
+  with the playhead following the sound. The browser opens sound on the first play (a click).
+  Where a browser has no Web Audio, playback is silent with a notice.
 
 ## Not in the web editor yet
 
 | Missing | Why, and what to do meanwhile |
 |---|---|
 | Video export | It runs ffmpeg, which a page can't start. The menu item is dimmed; export a GIF, PNG sequence or HTML page. |
-| Sound playback | The page plays silently for now (Web Audio comes later). Sounds still import, show on the timeline and export (WAV, HTML). |
 | GPU stage | The stage draws on the CPU, on one thread. The GPU renderer builds for the web but isn't wired to WebGPU yet. |
 | Installing plug-ins | Plug-ins live in a folder on the computer. Use the desktop app. |
 | Fonts on your computer | A page can't see them. Text uses the bundled faces. |
